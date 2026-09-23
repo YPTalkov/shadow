@@ -12,6 +12,8 @@ let package = Package(
         .library(name: "EgressGateway", targets: ["EgressGateway"]),
         .executable(name: "vm-config-probe", targets: ["VMConfigProbe"]),
         .executable(name: "vm-boot-probe", targets: ["VMBootProbe"]),
+        .executable(name: "Shadow", targets: ["OwnerApp"]),
+        .executable(name: "owner-ui-probe", targets: ["OwnerUIProbe"]),
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
@@ -21,6 +23,9 @@ let package = Package(
         .target(name: "EgressGateway", dependencies: ["PolicyCore"]),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
         .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway"]),
-        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost"], path: "tests/PolicyCoreTests"),
+        .target(name: "OwnerUI", dependencies: ["BrokerHost"]),
+        .executableTarget(name: "OwnerApp", dependencies: ["OwnerUI"]),
+        .executableTarget(name: "OwnerUIProbe", dependencies: ["OwnerUI"]),
+        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost", "OwnerUI"], path: "tests/PolicyCoreTests"),
     ]
 )
