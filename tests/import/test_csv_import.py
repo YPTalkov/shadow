@@ -1,0 +1,88 @@
+import json
+
+import pytest
+
+from vault_worker.csv_import import CSVImportError, CSVMapping, SelectedCSV
+from vault_worker.store import MemoryAnchor, VaultStore
+
+
+MASTER = "synthetic-master-password"
+MAPPING = CSVMapping(title="Title", url="URL", username="Username", password="Password", notes="Notes", group="Group")
+
+
+def test_bom_multiline_unicode_and_idempotent_commit(tmp_path):
+    source = tmp_path / "synthetic.csv"
+    source.write_bytes(("\ufeffTitle,URL,Username,Password,Notes,Group,Unused\r\n"
+                        '"Ex, ample",https://example.invalid/private?token=hidden,Zoë,"synthetic,password",'
+                        '"line 1\nline 2",Personal,unmapped-canary\r\n'
+                        'Formula,https://another.invalid/,owner,=NOT_EVALUATED,notes-canary,,x\r\n').encode())
+    store = VaultStore(tmp_path / "private", MemoryAnchor())
+    store.create(MASTER)
+
+    with SelectedCSV(source, MAPPING) as selected:
+        preview = selected.preview()
+        assert preview.accepted == 2
+        assert preview.rejected == 0
+        assert preview.rows[0]["title"] == "Ex, ample"
+        public = json.dumps(preview.public())
+        for canary in ("synthetic,password", "line 1", "unmapped-canary", "notes-canary", "hidden"):
+            assert canary not in public
+        receipt = selected.commit(store, MASTER, operation_id="synthetic-batch-1")
+        assert receipt == {"accepted": 2, "rejected": 0, "replayed": False}
+        replay = selected.commit(store, MASTER, operation_id="synthetic-batch-1")
+        assert replay["replayed"] is True
+
+    vault = store.open(MASTER)
+    assert len(vault.entries) == 2
+    first = vault.find_entries(title="Ex, ample", first=True)
+    assert first.password == "synthetic,password"
+    assert first.notes == "line 1\nline 2"
+    assert vault.find_entries(title="Formula", first=True).password == "=NOT_EVALUATED"
+
+
+def test_invalid_row_aborts_unless_owner_selects_valid_only(tmp_path):
+    source = tmp_path / "synthetic.csv"
+    source.write_text("Title,URL,Username,Password\nGood,https://example.invalid,owner,synthetic-secret\nBad,not a url,owner,other-secret\n")
+    store = VaultStore(tmp_path / "private", MemoryAnchor())
+    store.create(MASTER)
+    mapping = CSVMapping(title="Title", url="URL", username="Username", password="Password")
+    with SelectedCSV(source, mapping) as selected:
+        preview = selected.preview()
+        assert (preview.accepted, preview.rejected) == (1, 1)
+        with pytest.raises(CSVImportError) as abort:
+            selected.commit(store, MASTER, operation_id="batch")
+        assert abort.value.code == "invalid_rows"
+        assert not store.open(MASTER).entries
+        receipt = selected.commit(store, MASTER, operation_id="batch", valid_rows_only=True)
+        assert receipt == {"accepted": 1, "rejected": 1, "replayed": False}
+        assert len(store.open(MASTER).entries) == 1
+
+
+def test_symlink_and_changed_file_are_rejected(tmp_path):
+    source = tmp_path / "source.csv"
+    source.write_text("Title,URL,Username,Password\nGood,https://example.invalid,owner,synthetic-secret\n")
+    link = tmp_path / "link.csv"
+    link.symlink_to(source)
+    mapping = CSVMapping(title="Title", url="URL", username="Username", password="Password")
+    with pytest.raises(CSVImportError) as symlink:
+        SelectedCSV(link, mapping)
+    assert symlink.value.code == "unsafe_source"
+    store = VaultStore(tmp_path / "private", MemoryAnchor())
+    store.create(MASTER)
+    with SelectedCSV(source, mapping) as selected:
+        selected.preview()
+        source.write_text(source.read_text() + "Changed,https://example.invalid,other,new-secret\n")
+        with pytest.raises(CSVImportError) as changed:
+            selected.commit(store, MASTER, operation_id="batch")
+        assert changed.value.code == "source_changed"
+    assert not store.open(MASTER).entries
+
+
+def test_secret_header_cannot_also_be_public_title(tmp_path):
+    source = tmp_path / "synthetic.csv"
+    source.write_text("Title,URL,Username,Password\nGood,https://example.invalid,owner,synthetic-secret\n")
+    mapping = CSVMapping(title="Password", url="URL", username="Username", password="Password")
+    with SelectedCSV(source, mapping) as selected:
+        with pytest.raises(CSVImportError) as invalid:
+            selected.preview()
+    assert invalid.value.code == "invalid_mapping"

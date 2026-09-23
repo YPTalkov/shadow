@@ -28,6 +28,14 @@ class VaultStoreError(Exception):
         super().__init__(code)
 
 
+class SkipMutation(Exception):
+    """Trusted mutator requests no KDBX write (for idempotent replay)."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
 class GenerationAnchor(Protocol):
     def read(self) -> str | None: ...
     def advance(self, digest: str) -> None: ...
@@ -201,7 +209,8 @@ class VaultStore:
         mutate: Callable[[PyKeePass], None],
         *,
         fault: Callable[[str], None] | None = None,
-    ) -> None:
+        pre_publish: Callable[[], None] | None = None,
+    ) -> str | None:
         fault = fault or (lambda _: None)
         self._check_dir(self.private_dir)
         self._check_dir(self.backup_dir)
@@ -213,7 +222,10 @@ class VaultStore:
                 try:
                     old_digest = self._verify_current(db, old_data)
                     vault = load_managed(old_data, password)
-                    mutate(vault)
+                    try:
+                        mutate(vault)
+                    except SkipMutation as skipped:
+                        return skipped.code
                     output = io.BytesIO()
                     vault.save(output)
                     new_data = output.getvalue()
@@ -236,6 +248,8 @@ class VaultStore:
                     fault("after_temp_fsync")
                     if self._read_live() != old_data:
                         raise VaultStoreError("external_modification")
+                    if pre_publish is not None:
+                        pre_publish()
                     load_managed(temp_path.read_bytes(), password)
                     fault("after_validate")
                     os.replace(temp_path, self.vault_path)
@@ -249,6 +263,7 @@ class VaultStore:
                     fault("after_ledger")
                     self.anchor.advance(new_digest)
                     fault("after_anchor")
+                    return None
                 finally:
                     db.close()
         except VaultStoreError:

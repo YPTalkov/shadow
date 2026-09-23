@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YPTalkov/shadow/contracts/csv-mapping/v1",
+  "title": "Owner-selected CSV header mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "url", "username", "password"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "url": {"type": "string", "minLength": 1, "maxLength": 256},
+    "username": {"type": "string", "minLength": 1, "maxLength": 256},
+    "password": {"type": "string", "minLength": 1, "maxLength": 256},
+    "notes": {"type": "string", "maxLength": 256},
+    "totp": {"type": "string", "maxLength": 256},
+    "group": {"type": "string", "maxLength": 256}
+  }
+}
