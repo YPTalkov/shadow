@@ -16,6 +16,10 @@ public final class OwnerVaultModel {
     public private(set) var preview: OwnerImportPreview?
     public var mapping = OwnerCSVMapping(title: "", url: "", username: "", password: "")
     public var validRowsOnly = false
+    public private(set) var editor: OwnerEditorStatus?
+    public private(set) var editorReview: OwnerEditorReview?
+    private var editorReservation: EditorReservation?
+    private var isLocking = false
     private var worker: PrivateVaultWorker?
     private var epoch = 0
     private var importOperation = UUID()
@@ -30,11 +34,11 @@ public final class OwnerVaultModel {
     public func noteInteraction() { lastInteraction = Date() }
 
     public func checkIdle() async {
-        if unlocked && Date().timeIntervalSince(lastInteraction) >= 15 * 60 { await lock() }
+        if (unlocked || editorReview != nil) && Date().timeIntervalSince(lastInteraction) >= 15 * 60 { await lock() }
     }
 
     public func open(password: String, create: Bool) async {
-        guard !busy, !unlocked else { return }
+        guard !busy, !unlocked, editor == nil else { return }
         busy = true
         message = nil
         status = create ? "Creating vault…" : "Unlocking…"
@@ -56,23 +60,140 @@ public final class OwnerVaultModel {
             guard generation == epoch else { return }
             await lock()
             message = Self.explain(error)
+            if case VaultWorkerError.reported("editor_active") = error { await refreshEditorStatus() }
         }
     }
 
     public func lock() async {
+        guard !isLocking else { return }
+        isLocking = true
+        defer { isLocking = false; busy = false }
         epoch += 1
         let client = worker
         worker = nil
         unlocked = false
-        busy = false
+        busy = true
         status = "Locked"
         accounts = []
         nextOffset = nil
         headers = []
         selectedCSV = nil
         preview = nil
+        editorReview = nil
         mapping = OwnerCSVMapping(title: "", url: "", username: "", password: "")
         await client?.lock()
+        if editor != nil {
+            status = "Editing checkout active"
+            reserveEditor()
+        }
+    }
+
+    public func refreshEditorStatus() async {
+        guard !busy, !unlocked, worker == nil else { return }
+        busy = true
+        let generation = epoch
+        defer { if generation == epoch { busy = false } }
+        do {
+            let client = try await launchWorker()
+            let state = try await client.editorStatus()
+            await client.lock()
+            guard generation == epoch else { return }
+            editor = state.state == "editing" ? state : nil
+            if editor != nil { status = "Editing checkout active"; reserveEditor() }
+        } catch {
+            guard generation == epoch else { return }
+            message = Self.explain(error)
+        }
+    }
+
+    public func beginEditing() async {
+        guard unlocked, !busy, let client = worker else { return }
+        busy = true
+        let generation = epoch
+        do {
+            let state = try await client.beginEditor()
+            guard generation == epoch else { return }
+            editor = state
+            await lock()
+            message = "An encrypted editing copy is ready. Unlock it independently in KeePassXC, then close KeePassXC and review your changes here."
+        } catch {
+            guard generation == epoch else { return }
+            await lock()
+            message = Self.explain(error)
+            await refreshEditorStatus()
+        }
+    }
+
+    public func openEditor() async {
+        guard !busy, let path = editor?.checkoutPath, editorReservation != nil else { return }
+        do { try await QualifiedEditor.openCheckout(URL(fileURLWithPath: path)) }
+        catch { message = "The qualified KeePassXC 2.7.12 app could not open. Your encrypted checkout is preserved." }
+    }
+
+    public func previewEditing(password: String) async {
+        await editingOperation { client in
+            let review = try await client.previewEditor(password: password)
+            return { self.editorReview = review; self.status = "Review editor changes" }
+        }
+    }
+
+    public func applyEditing() async {
+        guard let review = editorReview else { return }
+        await editingOperation { client in
+            let result = try await client.commitEditor(reviewID: review.reviewId)
+            return {
+                self.editor = nil; self.editorReview = nil
+                self.message = result.lateChange
+                    ? "Reviewed changes were applied. The editing copy changed again and was preserved; review that copy separately."
+                    : "Reviewed changes were applied. The encrypted editing copy is preserved; later editor saves cannot change your active vault. Unlock to continue."
+            }
+        }
+        if editor == nil { await lock() }
+    }
+
+    public func cancelEditing(discard: Bool) async {
+        await editingOperation { client in
+            _ = try await client.cancelEditor(discard: discard)
+            return {
+                self.editor = nil; self.editorReview = nil
+                self.message = discard ? "Editing cancelled and the checkout discarded. The active vault was preserved." : "Editing cancelled. The encrypted checkout was preserved in the vault's editor folder."
+            }
+        }
+        if editor == nil { await lock() }
+    }
+
+    private func launchWorker() async throws -> PrivateVaultWorker {
+        try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID)
+    }
+
+    private func reserveEditor() {
+        guard editorReservation == nil else { return }
+        do { editorReservation = try EditorReservation(vaultDirectory: configuration.vaultDirectory) }
+        catch { message = "The editing lease could not be reserved. Keep the checkout; vault access remains closed." }
+    }
+
+    private func editingOperation(_ operation: (PrivateVaultWorker) async throws -> (() -> Void)) async {
+        guard editor != nil, !busy, !unlocked else { return }
+        guard !QualifiedEditor.isRunning else { message = "Close KeePassXC before reviewing, applying or cancelling this checkout."; return }
+        busy = true
+        message = nil
+        editorReservation = nil
+        noteInteraction()
+        let generation = epoch
+        defer { if generation == epoch { busy = false } }
+        do {
+            let client: PrivateVaultWorker
+            if let existing = worker { client = existing } else { client = try await launchWorker() }
+            guard generation == epoch else { await client.lock(); return }
+            worker = client
+            let publish = try await operation(client)
+            guard generation == epoch else { return }
+            publish()
+        } catch {
+            guard generation == epoch else { return }
+            await lock()
+            message = Self.explain(error)
+        }
     }
 
     public func loadMore() async {
@@ -174,6 +295,9 @@ public final class OwnerVaultModel {
         case "invalid_csv", "unsafe_source": return "This CSV cannot be imported. Check its encoding, headers and format."
         case "limit_exceeded": return "The selected file exceeds the import limits."
         case "unsupported_profile", "kdf_limit_exceeded": return "This encrypted file uses settings that have not been qualified."
+        case "editor_active": return "An encrypted editing checkout is active. Finish or cancel it before unlocking the vault."
+        case "editor_changed": return "The editing copy changed after review. Close KeePassXC and review the new version before applying."
+        case "editor_unavailable": return "The editing copy is missing or unavailable. Its existing recovery files were preserved."
         case "unsafe_path": return "The vault's file permissions or location need attention before access can resume."
         default: return "The operation could not be completed. Your encrypted files were preserved."
         }

@@ -8,6 +8,7 @@ public struct OwnerPanel: View {
     @State private var destination: Destination? = .vault
     @State private var password = ""
     @State private var confirmation = ""
+    @State private var discardCheckout = false
 
     public init(model: OwnerVaultModel, initialDestination: Destination = .vault) {
         self.model = model
@@ -49,7 +50,7 @@ public struct OwnerPanel: View {
                     Text(model.status).fontWeight(.semibold)
                     if model.busy { ProgressView().controlSize(.small) }
                     Spacer()
-                    if model.unlocked || model.busy {
+                    if model.unlocked || model.busy || model.editorReview != nil {
                         Button(model.busy ? "Cancel and lock" : "Lock vault") { Task { await model.lock() } }
                             .accessibilityLabel("Lock vault and end access")
                     }
@@ -79,12 +80,15 @@ public struct OwnerPanel: View {
             }
         }
         .navigationTitle("Shadow")
+        .task { await model.refreshEditorStatus() }
         .onChange(of: model.unlocked) { _, unlocked in if !unlocked { password = ""; confirmation = "" } }
     }
 
     private var vault: some View {
         Group {
-            if model.unlocked {
+            if model.editor != nil {
+                editorView
+            } else if model.unlocked {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -92,6 +96,9 @@ public struct OwnerPanel: View {
                             Text("Account metadata is visible here. Password inspection belongs in KeePassXC.").font(.callout).foregroundStyle(.secondary)
                         }
                         Spacer()
+                        Button("Open in KeePassXC…") {
+                            Task { await model.beginEditing(); await model.openEditor() }
+                        }.disabled(model.busy)
                         Button("Import CSV") { destination = .importCSV }
                     }.padding([.top, .horizontal])
                     if model.accounts.isEmpty {
@@ -126,6 +133,48 @@ public struct OwnerPanel: View {
                     .disabled(model.busy || password.isEmpty || (!model.vaultExists && password != confirmation))
                 }.frame(maxWidth: 460).padding(32)
             }
+        }
+    }
+
+    private var editorView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Label("Editing in KeePassXC", systemImage: "lock.doc").font(.title2.bold())
+                Text("Vault access is closed while you work on an encrypted copy. Unlock that copy independently in KeePassXC. Close KeePassXC before reviewing or cancelling here.")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Open editing copy") { Task { await model.openEditor() } }.disabled(model.busy || model.editorReview != nil)
+                    Button("Show editing folder") {
+                        if let path = model.editor?.checkoutPath { NSWorkspace.shared.open(URL(fileURLWithPath: path).deletingLastPathComponent()) }
+                    }
+                }
+                Divider()
+                if let review = model.editorReview {
+                    Text("Review changes").font(.headline)
+                    Text("\(review.added) added · \(review.changed) changed · \(review.removed) removed")
+                    if review.groupsChanged { Text("Group organization changed.") }
+                    if review.protectedMetadataRestored > 0 { Text("Source provenance and app-owned fields were restored for \(review.protectedMetadataRestored) entries. Editor changes cannot create agent permission.").foregroundStyle(.secondary) }
+                    Text("Applying these changes uses your active vault's encryption settings and master password. The encrypted editing copy stays available for recovery.").foregroundStyle(.secondary)
+                    HStack {
+                        Button("Apply reviewed changes") { Task { await model.applyEditing() } }.buttonStyle(.borderedProminent).disabled(model.busy)
+                        Button("Cancel review and lock") { Task { await model.lock() } }.disabled(model.busy)
+                    }
+                } else {
+                    Text("Review after closing KeePassXC").font(.headline)
+                    SecureField("Current vault master password", text: $password).textFieldStyle(.roundedBorder).frame(maxWidth: 440)
+                    Text("Changing the master password on an editing copy is not supported. Restore its original master password in KeePassXC before reviewing.").font(.callout).foregroundStyle(.secondary)
+                    Button("Review changes") {
+                        let value = password; password = ""
+                        Task { await model.previewEditing(password: value) }
+                    }.buttonStyle(.borderedProminent).disabled(model.busy || password.isEmpty)
+                }
+                Divider()
+                Toggle("Discard the encrypted editing copy when cancelling", isOn: $discardCheckout)
+                Button(discardCheckout ? "Cancel editing and discard copy" : "Cancel editing and keep copy") {
+                    password = ""
+                    Task { await model.cancelEditing(discard: discardCheckout) }
+                }.disabled(model.busy)
+            }.padding(24)
         }
     }
 

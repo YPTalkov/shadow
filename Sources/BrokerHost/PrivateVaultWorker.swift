@@ -60,6 +60,27 @@ public struct OwnerImportResult: Codable, Sendable {
     public let replayed: Bool
 }
 
+public struct OwnerEditorStatus: Codable, Sendable {
+    public let state: String
+    public let checkoutId: String?
+    public let checkoutPath: String?
+}
+
+public struct OwnerEditorReview: Codable, Sendable {
+    public let reviewId: String
+    public let added: Int
+    public let changed: Int
+    public let removed: Int
+    public let groupsChanged: Bool
+    public let protectedMetadataRestored: Int
+}
+
+public struct OwnerEditorResult: Codable, Sendable {
+    public let state: String
+    public let checkoutRetained: Bool
+    public let lateChange: Bool
+}
+
 public actor PrivateVaultWorker {
     private let process: Process
     private let transport: FramedChannel
@@ -140,6 +161,26 @@ public actor PrivateVaultWorker {
 
     public func catalog(offset: Int = 0) async throws -> OwnerCatalogPage {
         try await request("owner.catalog", payload: Page(offset: offset))
+    }
+
+    public func editorStatus() async throws -> OwnerEditorStatus {
+        try await request("editor.status", payload: Empty())
+    }
+
+    public func beginEditor() async throws -> OwnerEditorStatus {
+        try await request("editor.begin", payload: Empty())
+    }
+
+    public func previewEditor(password: String) async throws -> OwnerEditorReview {
+        try await request("editor.preview", payload: Password(password: password))
+    }
+
+    public func commitEditor(reviewID: String) async throws -> OwnerEditorResult {
+        try await request("editor.commit", payload: EditorCommit(reviewId: reviewID))
+    }
+
+    public func cancelEditor(discard: Bool) async throws -> OwnerEditorResult {
+        try await request("editor.cancel", payload: EditorCancel(discard: discard))
     }
 
     private func request<P: Encodable & Sendable, R: Decodable & Sendable>(_ kind: String, payload: P) async throws -> R {
@@ -225,5 +266,7 @@ public actor PrivateVaultWorker {
     private struct Page: Encodable, Sendable { let offset: Int }
     private struct Headers: Decodable, Sendable { let headers: [String] }
     private struct Empty: Encodable, Sendable {}
-    private static let safeCodes: Set<String> = ["unsafe_path", "writer_busy", "recovery_required", "already_exists", "storage_unavailable", "invalid_credentials", "invalid_vault", "unsupported_profile", "kdf_limit_exceeded", "external_modification", "unsafe_source", "source_unavailable", "source_changed", "limit_exceeded", "invalid_mapping", "invalid_rows", "invalid_csv", "preview_required", "invalid_request", "operation_conflict", "vault_unavailable", "vault_locked", "unsupported_operation", "worker_unavailable"]
+    private struct EditorCommit: Encodable, Sendable { let reviewId: String }
+    private struct EditorCancel: Encodable, Sendable { let discard: Bool }
+    private static let safeCodes: Set<String> = ["unsafe_path", "writer_busy", "recovery_required", "already_exists", "storage_unavailable", "invalid_credentials", "invalid_vault", "unsupported_profile", "kdf_limit_exceeded", "external_modification", "unsafe_source", "source_unavailable", "source_changed", "limit_exceeded", "invalid_mapping", "invalid_rows", "invalid_csv", "preview_required", "invalid_request", "operation_conflict", "vault_unavailable", "vault_locked", "unsupported_operation", "worker_unavailable", "editor_active", "editor_unavailable", "editor_changed"]
 }

@@ -69,18 +69,20 @@ class VaultStore:
 
     def _check_dir(self, path: Path) -> None:
         try:
-            mode = path.lstat().st_mode
+            details = path.lstat()
         except OSError:
             raise VaultStoreError("unsafe_path") from None
-        if not stat.S_ISDIR(mode) or mode & 0o077:
+        if not stat.S_ISDIR(details.st_mode) or details.st_mode & 0o077 or details.st_uid != os.getuid():
             raise VaultStoreError("unsafe_path")
 
     def _ensure_dirs(self) -> None:
         if not self.private_dir.exists():
             self.private_dir.mkdir(mode=0o700, parents=False)
+            self._fsync_dir(self.private_dir.parent)
         self._check_dir(self.private_dir)
         if not self.backup_dir.exists():
             self.backup_dir.mkdir(mode=0o700)
+            self._fsync_dir(self.private_dir)
         self._check_dir(self.backup_dir)
 
     @contextmanager
@@ -88,7 +90,8 @@ class VaultStore:
         flags = os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW
         try:
             fd = os.open(self.lock_path, flags, 0o600)
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_uid != os.getuid():
                 raise VaultStoreError("unsafe_path")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -140,6 +143,7 @@ class VaultStore:
             db.execute("PRAGMA synchronous=FULL")
             db.execute("CREATE TABLE IF NOT EXISTS vault_generation (id INTEGER PRIMARY KEY CHECK (id = 1), digest TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS prepared_generation (id TEXT PRIMARY KEY, old_digest TEXT NOT NULL, new_digest TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS editor_handoff (id INTEGER PRIMARY KEY CHECK (id = 1), checkout_id TEXT NOT NULL, baseline_digest TEXT NOT NULL)")
             db.commit()
             os.chmod(self.ledger_path, 0o600)
             return db
@@ -187,13 +191,19 @@ class VaultStore:
         except (OSError, sqlite3.Error, ManagedKDBXError):
             raise VaultStoreError("storage_unavailable") from None
 
-    def open(self, password: str) -> PyKeePass:
+    def _check_editor(self, db: sqlite3.Connection, editor_id: str | None) -> None:
+        row = db.execute("SELECT checkout_id FROM editor_handoff WHERE id = 1").fetchone()
+        if (row is not None and row[0] != editor_id) or (row is None and editor_id is not None):
+            raise VaultStoreError("editor_active" if row else "editor_unavailable")
+
+    def open(self, password: str, *, editor_id: str | None = None) -> PyKeePass:
         self._check_dir(self.private_dir)
         data = self._read_live()
         db = self._connect()
         try:
             with db:
                 self._verify_current(db, data)
+                self._check_editor(db, editor_id)
                 # Prepared writes that never replaced the live generation have no authority.
                 db.execute("DELETE FROM prepared_generation")
         finally:
@@ -210,6 +220,8 @@ class VaultStore:
         *,
         fault: Callable[[str], None] | None = None,
         pre_publish: Callable[[], None] | None = None,
+        editor_id: str | None = None,
+        expected_digest: str | None = None,
     ) -> str | None:
         fault = fault or (lambda _: None)
         self._check_dir(self.private_dir)
@@ -221,6 +233,9 @@ class VaultStore:
                 db = self._connect()
                 try:
                     old_digest = self._verify_current(db, old_data)
+                    self._check_editor(db, editor_id)
+                    if expected_digest is not None and old_digest != expected_digest:
+                        raise VaultStoreError("external_modification")
                     vault = load_managed(old_data, password)
                     try:
                         mutate(vault)

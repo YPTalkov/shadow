@@ -13,6 +13,7 @@ import uuid
 from .catalog import Catalog
 from .csv_import import CSVImportError, CSVMapping, SelectedCSV
 from .store import VaultStore, VaultStoreError
+from .editor import EditorHandoff
 
 MAX_MESSAGE = 65_536
 ERROR_CODES = {
@@ -23,6 +24,7 @@ ERROR_CODES = {
     "invalid_mapping", "invalid_rows", "invalid_csv", "preview_required",
     "invalid_request", "operation_conflict", "vault_unavailable", "vault_locked",
     "unsupported_operation",
+    "editor_active", "editor_unavailable", "editor_changed",
 }
 
 
@@ -127,6 +129,7 @@ class Worker:
         self.password: str | None = None
         self.selected: SelectedCSV | None = None
         self.stopping = False
+        self.editor: EditorHandoff | None = None
 
     def close_selection(self) -> None:
         if self.selected:
@@ -141,9 +144,28 @@ class Worker:
             if not isinstance(path, str) or not Path(path).is_absolute() or len(path) > 4096:
                 raise ProtocolError
             self.store = VaultStore(Path(path), NativeAnchor(self.channel))
+            self.editor = EditorHandoff(self.store)
             return {"state": "locked"}
         if self.store is None:
             raise ProtocolError
+        if kind == "editor.status":
+            if payload:
+                raise ProtocolError
+            return self.editor.status()
+        if kind == "editor.preview":
+            if set(payload) != {"password"} or not isinstance(payload["password"], str) or not payload["password"]:
+                raise ProtocolError
+            self.close_selection()
+            self.password = None
+            result = self.editor.preview(payload["password"])
+            self.password = payload["password"]
+            return result
+        if kind == "editor.cancel":
+            if set(payload) != {"discard"} or type(payload["discard"]) is not bool:
+                raise ProtocolError
+            self.close_selection()
+            self.password = None
+            return self.editor.cancel(discard=payload["discard"])
         if kind in ("vault.create", "vault.unlock"):
             self.close_selection()
             self.password = None
@@ -162,6 +184,19 @@ class Worker:
             return {"state": "locked"}
         if self.password is None:
             raise VaultStoreError("vault_locked")
+        if kind == "editor.begin":
+            if payload:
+                raise ProtocolError
+            self.close_selection()
+            result = self.editor.begin(self.password)
+            self.password = None
+            return result
+        if kind == "editor.commit":
+            if set(payload) != {"review_id"} or not isinstance(payload["review_id"], str):
+                raise ProtocolError
+            result = self.editor.commit(self.password, payload["review_id"])
+            self.password = None
+            return result
         if kind == "csv.headers":
             if set(payload) != {"path"} or not isinstance(payload["path"], str):
                 raise CSVImportError("invalid_request")

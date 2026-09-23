@@ -64,6 +64,17 @@ Task { @MainActor in
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-vault.jpg"))
+        await owner.beginEditing()
+        guard owner.editor != nil, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        await owner.previewEditing(password: "synthetic-ui-master-password")
+        guard owner.editorReview?.changed == 0 else { throw OwnerConfigurationError.unavailable }
+        show(OwnerPanel(model: owner), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-editor-review.jpg"))
+        await owner.applyEditing()
+        guard owner.editor == nil, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        await owner.open(password: "synthetic-ui-master-password", create: false)
+        guard owner.unlocked, owner.accounts.count == 3 else { throw OwnerConfigurationError.unavailable }
         await owner.lock()
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
