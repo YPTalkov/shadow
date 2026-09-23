@@ -117,6 +117,15 @@ class SelectedCSV:
             self._fd = None
         self._rows = None
 
+    def headers(self) -> list[str]:
+        try:
+            headers = next(csv.reader(io.StringIO(self._read().decode("utf-8-sig"), newline=""), strict=True))
+            if not headers or len(headers) > 128 or len(set(headers)) != len(headers) or any(not name or len(name) > 256 for name in headers):
+                raise CSVImportError("invalid_csv")
+            return headers
+        except (UnicodeError, csv.Error, StopIteration):
+            raise CSVImportError("invalid_csv") from None
+
     def _read(self) -> bytes:
         if self._fd is None:
             raise CSVImportError("source_unavailable")

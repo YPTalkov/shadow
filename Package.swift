@@ -15,12 +15,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
-        .target(name: "BrokerHost", dependencies: ["PolicyCore"]),
+        .target(name: "BrokerHost", dependencies: ["PolicyCore", "RuntimeHost"]),
         .target(name: "RuntimeHost", dependencies: ["PolicyCore"]),
         .target(name: "ModelRelay", dependencies: ["PolicyCore"]),
         .target(name: "EgressGateway", dependencies: ["PolicyCore"]),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
         .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway"]),
-        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway"], path: "tests/PolicyCoreTests"),
+        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost"], path: "tests/PolicyCoreTests"),
     ]
 )

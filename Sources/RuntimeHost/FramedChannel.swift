@@ -20,6 +20,7 @@ public final class FramedChannel: @unchecked Sendable {
         guard copy >= 0 else { throw FrameError.closed }
         var enabled: Int32 = 1
         guard fcntl(copy, F_SETFL, fcntl(copy, F_GETFL) | O_NONBLOCK) == 0,
+              fcntl(copy, F_SETFD, FD_CLOEXEC) == 0,
               setsockopt(copy, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
             Darwin.close(copy)
             throw FrameError.closed
@@ -29,6 +30,8 @@ public final class FramedChannel: @unchecked Sendable {
     }
 
     deinit { Darwin.close(descriptor) }
+
+    public func invalidate() { shutdown(descriptor, SHUT_RDWR) }
 
     public func read(timeout: TimeInterval = 5) throws -> Data {
         guard timeout.isFinite, timeout > 0 else { throw FrameError.timeout }

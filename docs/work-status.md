@@ -5,11 +5,11 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | Unit | State | Evidence or remaining work |
 |---|---|---|
 | U1 | Partial | KDBX interoperability and Swift builds pass; dependency audit and final image locks remain. |
-| U2 | In progress | Both Linux profiles boot; root boundary probes, Linux Codex synthetic relay, and certificate-verified leased HTTPS pass. Browser-specific bypass tests, watchdogs, live sign-in and production images remain. |
-| U3 | Partial | Transaction and recovery primitives tested; private supervisor worker integration remains. |
+| U2 | Partial | Both Linux profiles boot; root boundary probes, Linux Codex synthetic relay, and certificate-verified leased HTTPS pass. Browser-specific bypass tests, watchdogs, live sign-in and production images remain. |
+| U3 | Partial | Native private worker and actual Keychain integration pass create/import/reopen/rollback tests. Hostile-file limits and full crash qualification remain. |
 | U4 | Partial | Catalog, references, authority and restriction ledger tested; supervisor integration remains. |
 | U5 | Partial | Descriptor-based CSV preview/commit tested; native import flow remains. |
-| U6 | Pending | Native owner controls and KeePassXC handoff. |
+| U6 | In progress | Native worker client is integrated; implement owner controls and KeePassXC handoff. |
 | U7 | Pending | Connector consumer and retention conformance. |
 | U8 | Pending | Public protocol and guest CLI/MCP/PTC clients. |
 | U9 | Pending | Protected browser and leased egress. |

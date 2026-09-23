@@ -138,3 +138,16 @@ class Catalog:
             next_cursor = secrets.token_hex(32)
             self._cursors[next_cursor] = (time.monotonic() + 300, normalized_query, scope, next_offset)
         return {"items": selected, "next_cursor": next_cursor}
+
+    def owner_page(self, offset: int) -> dict[str, object]:
+        """Native-only metadata page; UUIDs never cross the public agent API."""
+        selected = []
+        for item in self._items[offset:offset + 50]:
+            projected = item.public("")
+            projected.pop("account_ref")
+            projected["id"] = item.id
+            if len(json.dumps(selected + [projected], ensure_ascii=False).encode()) > 60 * 1024:
+                break
+            selected.append(projected)
+        next_offset = offset + len(selected)
+        return {"items": selected, "next_offset": next_offset if next_offset < len(self._items) else None}
