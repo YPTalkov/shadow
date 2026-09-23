@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from pykeepass import PyKeePass
 from .secret_guard import SecretGuard, REDACTED
+from .ingest import source_record
 
 
 class CatalogError(Exception):
@@ -57,6 +58,10 @@ class CatalogItem:
     presence: str = "present"
     authorization: str = "unapproved"
     observed_at: str | None = None
+    source_instance: str | None = None
+    restriction_event: str | None = None
+    conflicted: bool = False
+    diverged: bool = False
 
     def public(self, account_ref: str) -> dict[str, object]:
         return {
@@ -95,6 +100,11 @@ class Catalog:
                 value = entry._element.find(f"String[Key='{key}']/Value")
                 return value is not None and value.get("Protected") == "True"
             origin = "" if protected("URL") else guard.project(_origin(entry.url), maximum=512)
+            source = source_record(entry)
+            if source and source.get("archived"):
+                continue
+            if source and source.get("presence") not in {"present", "deleted_at_source", "access_lost", "unknown"}:
+                raise CatalogError("invalid_catalog")
             items.append(CatalogItem(
                 id=str(entry.uuid),
                 title=REDACTED if protected("Title") else guard.project(entry.title),
@@ -102,6 +112,14 @@ class Catalog:
                 origins=(origin,) if origin and origin != REDACTED else (),
                 group=guard.project(" / ".join(entry.group.path) if entry.group else ""),
                 revision=revision,
+                source_kind="mirrored" if source else "local",
+                presence=source["presence"] if source else "present",
+                authorization="blocked" if source and source.get("conflicted") else "unapproved",
+                observed_at=source.get("last_observed") if source else None,
+                source_instance=source["instance"] if source else None,
+                restriction_event=source.get("restriction_event") if source else None,
+                conflicted=bool(source and source.get("conflicted")),
+                diverged=bool(source and source.get("diverged")),
             ))
         return cls(items)
 
@@ -159,6 +177,10 @@ class Catalog:
             projected.pop("account_ref")
             projected["id"] = item.id
             projected["revision"] = item.revision
+            projected["source_instance"] = item.source_instance
+            projected["restriction_event"] = item.restriction_event
+            projected["conflicted"] = item.conflicted
+            projected["diverged"] = item.diverged
             if len(json.dumps(selected + [projected], ensure_ascii=False).encode()) > 60 * 1024:
                 break
             selected.append(projected)

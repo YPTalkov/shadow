@@ -101,3 +101,25 @@ The consumer and producer must pass a common synthetic suite for:
 - No secret in receipts, logs, status, metadata projections, diagnostic errors, or agent refresh responses.
 
 Apple-specific live evidence belongs to the connector project. Passing this suite proves protocol behavior, not Apple's completeness, source identity stability, export support, or entitlement availability.
+
+## JSON wire profile
+
+The initial implementation uses UTF-8 JSON with a four-byte unsigned big-endian byte-length prefix. No compression is accepted. Duplicate JSON object keys, nesting beyond 12 levels, floating-point/nonfinite numbers, and unknown envelope/payload fields are rejected. The frame limit remains 1 MiB. `producer_sequence` is scoped to a batch: begin is zero, each following frame increments by one, and commit's `final_sequence` equals its own sequence. A reconnect gets a fresh host epoch. An exact batch replay uses its original semantic frames and batch ID; the HMAC excludes only the authenticated channel epoch. The HMAC includes length-delimited canonical JSON frames with sorted keys, compact separators and unescaped UTF-8.
+
+The envelope keys are `contract_major`, `source_instance_id`, `channel_epoch`, `producer_sequence`, `kind`, `batch_id`, and `payload`. Instance, epoch and batch IDs are canonical lowercase UUIDs. Payloads are:
+
+| Kind | Required payload keys |
+|---|---|
+| begin | previous_generation (integer), started_at (timezone-bearing ISO timestamp), mode (snapshot/delta) |
+| group | id, parent_id (nullable), name, relationship (owner/member/unknown), observation (present/unavailable) |
+| item | id (nullable only when stable identities are unavailable), source_revision (string or literal revision_unknown), title, username, urls (array), groups (array of group IDs), credential_kind (password), secret |
+| coverage | scope (account/group), id (account for an account scope), state, basis, capability_version |
+| delete | target (item/group), id, source_revision, observed_at, evidence |
+| commit | finished_at, final_sequence, coverage_count |
+| abort | No keys |
+
+The secret object requires password and permits notes/TOTP strings. Optional TOTP requires the enrolled capability. Item URLs are limited to 16 values of 2,048 bytes, memberships to 128 IDs, IDs to 256 bytes, and display names to 256 bytes. Group hierarchy is bounded to 32 ancestors. These are admission limits, not truncation rules for stored secrets.
+
+Coverage bases are enumeration_complete, enumeration_partial, source_locked, source_unavailable and permission_denied, matched to their respective states. Complete coverage requires a snapshot, stable identities and an enrolled authoritative scope. A complete account inventory may establish global absence; a complete group inventory alone produces uncertain presence when movement cannot be ruled out. Positive observation elsewhere is not global deletion. Complete account coverage combined with an incomplete child scope, or positive membership in an access-lost/deleted group, is contradictory and rejected. Explicit deletion evidence is limited to the enrolled item_tombstone/group_tombstone capability.
+
+An unlinked candidate cannot acquire ordinary use permission. Choosing to keep it as a local copy creates a distinct local UUID and archives the encrypted candidate; its restriction history remains intact. Resolving known-identity conflicts supports keep local, accept incoming, and keep both (a new local UUID plus the updated mirror). App-owned entry, group and vault provenance cannot be rewritten through an editor checkout.

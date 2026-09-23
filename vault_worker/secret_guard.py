@@ -96,7 +96,7 @@ class SecretGuard:
         for value in vault.tree.xpath("//String/Value | //Group/Notes | /KeePassFile/Meta/DatabaseDescription"):
             parent = value.getparent()
             key = parent.findtext("Key") if parent.tag == "String" else None
-            if key and key.startswith("shadow."):
+            if key and key.startswith("shadow.") and not key.startswith(("shadow.baseline.", "shadow.incoming.")):
                 continue
             if key in {"Title", "UserName", "URL"} and value.get("Protected") != "True":
                 continue

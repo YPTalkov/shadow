@@ -19,6 +19,7 @@ public struct RestrictionEvent: Sendable {
     public let id: UUID
     public let account: UUID
     public let kind: RestrictionKind
+    public init(id: UUID, account: UUID, kind: RestrictionKind) { self.id = id; self.account = account; self.kind = kind }
 }
 
 /// Append-only restriction history. Its independent Keychain anchor detects an
@@ -92,20 +93,43 @@ public final class RestrictionLedger {
         self.database = nil
     }
 
-    public func append(account: UUID, kind: RestrictionKind) throws -> RestrictionEvent {
+    public func append(account: UUID, kind: RestrictionKind, id: UUID = UUID()) throws -> RestrictionEvent {
+        let event = RestrictionEvent(id: id, account: account, kind: kind)
+        try appendBatch([event])
+        return event
+    }
+
+    public func appendBatch(_ events: [RestrictionEvent]) throws {
+        guard events.count <= 256 else { throw RestrictionLedgerError.storageUnavailable }
         let previous = try verify()
-        let event = RestrictionEvent(id: UUID(), account: account, kind: kind)
-        let head = Self.hash("\(previous)|\(event.id.uuidString)|\(account.uuidString)|\(kind.rawValue)")
+        var known = Dictionary(uniqueKeysWithValues: try rows().map { ($0.id, ($0.account, $0.kind)) })
+        var inserted: [(RestrictionEvent, String, String)] = []
+        var head = previous
+        for event in events {
+            if let existing = known[event.id] {
+                guard existing.0 == event.account, existing.1 == event.kind else { throw RestrictionLedgerError.recoveryRequired }
+                continue
+            }
+            let next = Self.hash("\(head)|\(event.id.uuidString)|\(event.account.uuidString)|\(event.kind.rawValue)")
+            inserted.append((event, head, next))
+            known[event.id] = (event.account, event.kind)
+            head = next
+        }
+        if inserted.isEmpty { return }
         try execute("BEGIN IMMEDIATE")
         do {
             let statement = try prepare("INSERT INTO restriction_event (id, account, kind, previous, head) VALUES (?, ?, ?, ?, ?)")
             defer { sqlite3_finalize(statement) }
-            try bind(event.id.uuidString, at: 1, to: statement)
-            try bind(account.uuidString, at: 2, to: statement)
-            try bind(kind.rawValue, at: 3, to: statement)
-            try bind(previous, at: 4, to: statement)
-            try bind(head, at: 5, to: statement)
-            guard sqlite3_step(statement) == SQLITE_DONE else { throw RestrictionLedgerError.storageUnavailable }
+            for (event, prior, next) in inserted {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                try bind(event.id.uuidString, at: 1, to: statement)
+                try bind(event.account.uuidString, at: 2, to: statement)
+                try bind(event.kind.rawValue, at: 3, to: statement)
+                try bind(prior, at: 4, to: statement)
+                try bind(next, at: 5, to: statement)
+                guard sqlite3_step(statement) == SQLITE_DONE else { throw RestrictionLedgerError.storageUnavailable }
+            }
             try execute("COMMIT")
         } catch {
             try? execute("ROLLBACK")
@@ -113,7 +137,6 @@ public final class RestrictionLedger {
         }
         // A crash between commit and anchor advance leaves a mismatch and denies use.
         try anchor.advance(expected: previous, to: head)
-        return event
     }
 
     public func events(for account: UUID) throws -> [RestrictionEvent] {
@@ -121,6 +144,11 @@ public final class RestrictionLedger {
         return try rows().filter { $0.account == account }.map {
             RestrictionEvent(id: $0.id, account: $0.account, kind: $0.kind)
         }
+    }
+
+    public func allEvents() throws -> [RestrictionEvent] {
+        _ = try verify()
+        return try rows().map { RestrictionEvent(id: $0.id, account: $0.account, kind: $0.kind) }
     }
 
     @discardableResult

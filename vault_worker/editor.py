@@ -13,6 +13,7 @@ from lxml import etree
 
 from .profile import MAX_FILE_BYTES, ManagedKDBXError, load_managed
 from .store import VaultStore, VaultStoreError
+from .encrypted_metadata import preserve_app_metadata
 
 
 def digest(data: bytes) -> str:
@@ -155,9 +156,11 @@ class EditorHandoff:
                 except ValueError:
                     raise VaultStoreError("recovery_required") from None
                 entry.set_custom_property("shadow.revision", str(revision + 1), protect=True)
-        # Vault/group custom metadata cannot introduce policy authority either.
-        # Only entry-level shadow fields are consumed; preserve candidate groups,
-        # history, ordinary custom fields and KeePass metadata as qualified XML.
+        preserve_app_metadata(original.tree.find("Meta"), edited.tree.find("Meta"))
+        original_groups = {group.uuid: group for group in original.groups}
+        for group in edited.groups:
+            previous = original_groups.get(group.uuid)
+            preserve_app_metadata(previous._element if previous else None, group._element)
         token = str(uuid.uuid4())
         snapshot = self._directory(checkout_id) / f"review-{token}.kdbx"
         self.store._write_exclusive(snapshot, data)
