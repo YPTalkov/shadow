@@ -8,4 +8,6 @@ On 2026-09-23, 12 native tests passed, including endpoint/authentication injecti
 
 The installed macOS Codex CLI 0.156.1 completed two Responses requests against a synthetic local SSE fixture: a harmless shell tool call followed by its output and a final message. It sent no authorization header. Command: SHADOW_CODEX_INTEGRATION=1 uv run --frozen pytest tests/isolation/test_agent_client.py.
 
-This is component evidence. Native sign-in and token refresh, protected credential custody, VM socket integration, actual Linux client execution, upstream streaming/cancellation tests, and live subscription authentication remain open. No real credential store was read. Reflection checks are defense in depth and do not prove protection from a malicious model provider encoding a credential across output events.
+The actual Linux client also completed this flow through the VM socket and native policy, as recorded in [isolation status](isolation-status.md). Its extra informational headers and client metadata are accepted and discarded before upstream forwarding. The native suite now has 14 passing tests.
+
+This is component evidence. Native sign-in and token refresh, protected credential custody, upstream streaming/cancellation tests, and live subscription authentication remain open. No real credential store was read. Reflection checks are defense in depth and do not prove protection from a malicious model provider encoding a credential across output events.

@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "RuntimeHost", targets: ["RuntimeHost"]),
         .library(name: "ModelRelay", targets: ["ModelRelay"]),
         .executable(name: "vm-config-probe", targets: ["VMConfigProbe"]),
+        .executable(name: "vm-boot-probe", targets: ["VMBootProbe"]),
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
@@ -17,6 +18,7 @@ let package = Package(
         .target(name: "RuntimeHost"),
         .target(name: "ModelRelay"),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
+        .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay"]),
         .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay"], path: "tests/PolicyCoreTests"),
     ]
 )

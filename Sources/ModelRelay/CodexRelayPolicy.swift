@@ -24,8 +24,8 @@ public struct CodexCredential: Sendable {
 public struct CodexRelayPolicy: Sendable {
     public static let maximumRequestBytes = 4 * 1024 * 1024
     private let models: Set<String>
-    private let fields: Set<String> = ["model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "reasoning", "include", "text", "service_tier", "prompt_cache_key", "stream", "store"]
-    private let allowedHeaders: Set<String> = ["content-type", "accept", "user-agent", "session_id", "session-id", "x-client-request-id", "x-codex-turn-metadata", "x-codex-beta-features", "openai-beta", "originator"]
+    private let fields: Set<String> = ["model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "reasoning", "include", "text", "service_tier", "prompt_cache_key", "stream", "store", "client_metadata"]
+    private let allowedHeaders: Set<String> = ["content-type", "accept", "user-agent", "session_id", "session-id", "thread-id", "x-client-request-id", "x-codex-turn-metadata", "x-codex-beta-features", "x-codex-window-id", "openai-beta", "originator"]
 
     public init(models: Set<String>) {
         self.models = models
@@ -51,7 +51,9 @@ public struct CodexRelayPolicy: Sendable {
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/codex/responses")!)
         request.httpMethod = "POST"
         // Canonical serialization prevents a second parser from interpreting duplicate keys differently.
-        request.httpBody = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        var upstream = json
+        upstream.removeValue(forKey: "client_metadata")
+        request.httpBody = try JSONSerialization.data(withJSONObject: upstream, options: [.sortedKeys])
         request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(credential.accountID, forHTTPHeaderField: "chatgpt-account-id")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

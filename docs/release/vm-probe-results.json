@@ -1,0 +1,52 @@
+{
+  "manifest": {
+    "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
+    "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "71d39306f07ec2bdf32df76e3de62e5222cec79b1733f641d16e085b0d6eb69c",
+      "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    }
+  },
+  "profiles": {
+    "agent": {
+      "passed": true,
+      "checks": {
+        "UID": "0",
+        "NETWORK_DEVICES": "lo",
+        "SWAP_DEVICES": "0",
+        "HOST_HOME_PRESENT": "no",
+        "SHARED_MOUNTS": "0",
+        "IP_ROUTE_COUNT": "0",
+        "VSOCK_ROLE_BOUNDARY": "pass",
+        "DIRECT_EGRESS": "denied",
+        "BASE_DISK": "readonly",
+        "LINUX_CODEX_RELAY": "pass",
+        "CODEX_TOOL_RESULT": "pass"
+      }
+    },
+    "browser": {
+      "passed": true,
+      "checks": {
+        "UID": "0",
+        "NETWORK_DEVICES": "lo",
+        "SWAP_DEVICES": "0",
+        "HOST_HOME_PRESENT": "no",
+        "SHARED_MOUNTS": "0",
+        "IP_ROUTE_COUNT": "0",
+        "VSOCK_ROLE_BOUNDARY": "pass",
+        "DIRECT_EGRESS": "denied",
+        "BASE_DISK": "readonly"
+      }
+    }
+  },
+  "target": {
+    "os": "macOS 26.6.2 (25G83)",
+    "architecture": "Apple Silicon ARM64",
+    "tested_at": "2026-09-23",
+    "codex": "0.156.1",
+    "python_guest": "3.12.14",
+    "native_tests": 14
+  },
+  "probe_executable_sha256": "51fbc1d25ea497da47221955e15891af3c0bc4f1758763ac412c91a7cb219d57"
+}

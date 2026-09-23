@@ -36,6 +36,15 @@ private let requestBody = Data(#"{"model":"qualified-model","instructions":"Synt
     }
 }
 
+@Test func codexClientMetadataDoesNotBecomeUpstreamRouting() throws {
+    let policy = CodexRelayPolicy(models: ["qualified-model"])
+    var body = try JSONSerialization.jsonObject(with: requestBody) as! [String: Any]
+    body["client_metadata"] = ["x-codex-turn-metadata": "synthetic"]
+    let request = try policy.request(method: "POST", path: "/v1/responses", headers: ["thread-id": "synthetic", "x-codex-window-id": "synthetic"], body: JSONSerialization.data(withJSONObject: body), credential: credential, now: Date(timeIntervalSince1970: 1000))
+    #expect(request.value(forHTTPHeaderField: "thread-id") == nil)
+    #expect(try (JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any])["client_metadata"] == nil)
+}
+
 @Test func relayLeaseCannotBeReusedByAnotherBootOrAfterItsBudget() async throws {
     let lease = RelayLease(instance: "host-created-instance", boot: "boot-one", expiresAt: 200, maximumRequests: 2, maximumInputBytes: 100)
     #expect(throws: RelayError.denied) { try lease.reserve(instance: "other", boot: "boot-one", bytes: 1, now: 100) }
