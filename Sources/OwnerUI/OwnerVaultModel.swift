@@ -1,10 +1,12 @@
 import Foundation
 import Observation
 import BrokerHost
+import PolicyCore
 
 @Observable @MainActor
 public final class OwnerVaultModel {
     public let configuration: OwnerConfiguration
+    public let access = AccessCoordinator()
     public private(set) var unlocked = false
     public private(set) var busy = false
     public private(set) var status = "Locked"
@@ -52,6 +54,7 @@ public final class OwnerVaultModel {
             let page = try await client.catalog()
             guard generation == epoch else { return }
             accounts = page.items
+            access.openVault(accounts: Self.consentAccounts(page.items))
             nextOffset = page.nextOffset
             unlocked = true
             status = "Unlocked"
@@ -69,6 +72,7 @@ public final class OwnerVaultModel {
         isLocking = true
         defer { isLocking = false; busy = false }
         epoch += 1
+        access.lock()
         let client = worker
         worker = nil
         unlocked = false
@@ -108,6 +112,7 @@ public final class OwnerVaultModel {
 
     public func beginEditing() async {
         guard unlocked, !busy, let client = worker else { return }
+        access.lock()
         busy = true
         let generation = epoch
         do {
@@ -200,7 +205,7 @@ public final class OwnerVaultModel {
         guard let offset = nextOffset else { return }
         await perform { client in
             let page = try await client.catalog(offset: offset)
-            return { self.accounts += page.items; self.nextOffset = page.nextOffset }
+            return { self.accounts += page.items; self.nextOffset = page.nextOffset; self.access.updateAccounts(Self.consentAccounts(page.items)) }
         }
     }
 
@@ -230,6 +235,7 @@ public final class OwnerVaultModel {
 
     public func commitCSV() async {
         guard preview != nil else { return }
+        access.lock()
         let operation = importOperation, validOnly = validRowsOnly
         await perform { client in
             let result = try await client.commitCSV(operationID: operation, validRowsOnly: validOnly)
@@ -237,12 +243,24 @@ public final class OwnerVaultModel {
             try await client.cancelCSV()
             return {
                 self.accounts = page.items
+                self.access.openVault(accounts: Self.consentAccounts(page.items))
                 self.nextOffset = page.nextOffset
                 self.preview = nil
                 self.selectedCSV = nil
                 self.headers = []
                 self.message = "Imported \(result.accepted) accounts. The original CSV is still plaintext; manage its export, download and cloud copies separately."
             }
+        }
+    }
+
+    private static func consentAccounts(_ items: [OwnerCatalogItem]) -> [ConsentAccount] {
+        items.compactMap { item in
+            guard let id = UUID(uuidString: item.id) else { return nil }
+            // Mirrored entries remain unusable until the native restriction
+            // ledger supplies their observation/removal history (U7).
+            let local = item.sourceKind == "local"
+            let policy = AccountPolicy(id: id, revision: item.revision, source: local ? .local : .mirrored, presence: local ? .present : .unknown, lastObserved: nil, restrictionEvent: nil)
+            return ConsentAccount(metadata: item, policy: policy)
         }
     }
 

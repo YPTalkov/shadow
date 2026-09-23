@@ -52,6 +52,7 @@ class CatalogItem:
     username: str
     origins: tuple[str, ...]
     group: str
+    revision: int = 1
     source_kind: str = "local"
     presence: str = "present"
     authorization: str = "unapproved"
@@ -84,6 +85,12 @@ class Catalog:
         for entry in vault.entries:
             if recycle is not None and recycle._element in entry._element.iterancestors():
                 continue
+            try:
+                revision = int(entry.get_custom_property("shadow.revision") or "1")
+                if not 1 <= revision < 2**63:
+                    raise ValueError
+            except ValueError:
+                raise CatalogError("invalid_catalog") from None
             def protected(key):
                 value = entry._element.find(f"String[Key='{key}']/Value")
                 return value is not None and value.get("Protected") == "True"
@@ -94,6 +101,7 @@ class Catalog:
                 username=REDACTED if protected("UserName") else guard.project(entry.username),
                 origins=(origin,) if origin and origin != REDACTED else (),
                 group=guard.project(" / ".join(entry.group.path) if entry.group else ""),
+                revision=revision,
             ))
         return cls(items)
 
@@ -150,6 +158,7 @@ class Catalog:
             projected = item.public("")
             projected.pop("account_ref")
             projected["id"] = item.id
+            projected["revision"] = item.revision
             if len(json.dumps(selected + [projected], ensure_ascii=False).encode()) > 60 * 1024:
                 break
             selected.append(projected)

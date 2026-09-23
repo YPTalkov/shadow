@@ -60,7 +60,7 @@ public struct OwnerPanel: View {
                     switch destination ?? .vault {
                     case .vault: vault
                     case .importCSV: importView
-                    case .access: ContentUnavailableView("Agent access is closed", systemImage: "lock.shield", description: Text("Credential use will remain unavailable until this build completes its runtime qualification."))
+                    case .access: AgentAccessView(access: model.access)
                     case .sources: ContentUnavailableView("No sources enrolled", systemImage: "arrow.triangle.2.circlepath", description: Text("CSV imports work independently. An optional connector can be enrolled after its consumer is qualified."))
                     case .recovery: recovery
                     }

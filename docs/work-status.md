@@ -9,8 +9,8 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U3 | Partial | Native worker/Keychain create/import/reopen/rollback and bounded hostile-file tests pass. Full packaged resource/crash qualification remains. |
 | U4 | Partial | Catalog, references, authority and restriction ledger tested; supervisor integration remains. |
 | U5 | Partial | Descriptor-based CSV preview/commit and native three-account import pass; final manual owner walkthrough remains. |
-| U6 | In progress | Native create/unlock/catalog/import/lock and encrypted KeePassXC checkout/reconciliation pass. Native authority controls, active VM integration and accessibility qualification remain. |
-| U7 | Pending | Connector consumer and retention conformance. |
+| U6 | Partial | Native vault/import/editor/consent/revocation flows pass (28 Swift tests). Actual VM/session integration, scope pagination and accessibility qualification remain. |
+| U7 | In progress | Implement private connector consumer, provenance/conflicts, restriction-ledger integration and conformance. |
 | U8 | Pending | Public protocol and guest CLI/MCP/PTC clients. |
 | U9 | Pending | Protected browser and leased egress. |
 | U10 | Pending | Qualified synthetic adapter, safe views and owner challenges. |

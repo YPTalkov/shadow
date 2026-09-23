@@ -23,7 +23,7 @@ let package = Package(
         .target(name: "EgressGateway", dependencies: ["PolicyCore"]),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
         .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway"]),
-        .target(name: "OwnerUI", dependencies: ["BrokerHost"]),
+        .target(name: "OwnerUI", dependencies: ["BrokerHost", "PolicyCore"]),
         .executableTarget(name: "OwnerApp", dependencies: ["OwnerUI"]),
         .executableTarget(name: "OwnerUIProbe", dependencies: ["OwnerUI"]),
         .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost", "OwnerUI"], path: "tests/PolicyCoreTests"),

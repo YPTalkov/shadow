@@ -3,6 +3,7 @@ import SwiftUI
 import Security
 import QuartzCore
 import OwnerUI
+import BrokerHost
 
 @MainActor
 func snapshot(_ window: NSWindow, to url: URL) throws {
@@ -64,8 +65,19 @@ Task { @MainActor in
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-vault.jpg"))
+        let caller = EnrolledAgent(id: UUID(), boot: UUID(), displayName: "Codex CLI · Synthetic probe")
+        owner.access.enroll(caller)
+        let request = try owner.access.requestCatalog(caller: caller, requestID: UUID())
+        let account = owner.access.accounts.first { $0.metadata.title == "Demo workspace" }!
+        try owner.access.approveCatalog(request.requestRef, selected: [account.id], duration: 300)
+        owner.access.installQualifiedAdapter(QualifiedAdapterPolicy(id: "synthetic-workspace-v1", credentialOrigins: ["https://workspace.example.invalid"], resourceOrigins: [], actions: [.login, .observe]))
+        let reference = try owner.access.accountReference(account.id, caller: caller)
+        _ = try owner.access.requestUse(caller: caller, requestID: UUID(), accountRef: reference, adapterID: "synthetic-workspace-v1", actions: [.login, .observe])
+        show(OwnerPanel(model: owner, initialDestination: .access), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-consent.jpg"))
         await owner.beginEditing()
-        guard owner.editor != nil, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        guard owner.editor != nil, !owner.unlocked, owner.access.grants.isEmpty, owner.access.pending.isEmpty else { throw OwnerConfigurationError.unavailable }
         await owner.previewEditing(password: "synthetic-ui-master-password")
         guard owner.editorReview?.changed == 0 else { throw OwnerConfigurationError.unavailable }
         show(OwnerPanel(model: owner), in: window)

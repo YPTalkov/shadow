@@ -1,28 +1,28 @@
 import Foundation
 
-public enum AccountSource: Sendable {
+public enum AccountSource: Sendable, Equatable {
     case local
     case mirrored
 }
 
-public enum SourcePresence: Sendable {
+public enum SourcePresence: Sendable, Equatable {
     case present
     case deletedAtSource
     case accessLost
     case unknown
 }
 
-public enum ProtectedAction: Hashable, Sendable {
+public enum ProtectedAction: String, Codable, CaseIterable, Hashable, Sendable {
     case login
     case observe
     case extract
     case navigate
     case click
     case scroll
-    case fillNonsecret
+    case fillNonsecret = "fill_nonsecret"
 }
 
-public struct AccountPolicy: Sendable {
+public struct AccountPolicy: Sendable, Equatable {
     public let id: UUID
     public let revision: UInt64
     public let source: AccountSource

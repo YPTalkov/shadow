@@ -24,7 +24,7 @@ public struct OwnerCSVMapping: Codable, Sendable {
     }
 }
 
-public struct OwnerCatalogItem: Codable, Identifiable, Sendable {
+public struct OwnerCatalogItem: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public let title: String
     public let username: String
@@ -33,6 +33,12 @@ public struct OwnerCatalogItem: Codable, Identifiable, Sendable {
     public let sourceKind: String
     public let presence: String
     public let authorization: String
+    public let revision: UInt64
+
+    public init(id: String, title: String, username: String, origins: [String], group: String, sourceKind: String = "local", presence: String = "present", authorization: String = "unapproved", revision: UInt64 = 1) {
+        self.id = id; self.title = title; self.username = username; self.origins = origins; self.group = group
+        self.sourceKind = sourceKind; self.presence = presence; self.authorization = authorization; self.revision = revision
+    }
 }
 
 public struct OwnerCatalogPage: Codable, Sendable {
