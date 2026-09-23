@@ -2,6 +2,7 @@
 
 import json
 import hashlib
+import os
 import subprocess
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def main() -> None:
         checks = {key: lines.get(key) for key in EXPECTED}
         if role == "agent":
             checks.update({key: lines.get(key) for key in ("LINUX_CODEX_RELAY", "CODEX_TOOL_RESULT")})
+        if role == "browser" and os.environ.get("SHADOW_LIVE_EGRESS") == "1":
+            checks.update({key: lines.get(key) for key in ("HTTPS_EGRESS", "EGRESS_DESTINATIONS")})
+            passed = passed and checks["HTTPS_EGRESS"] == "pass" and checks["EGRESS_DESTINATIONS"] == "denied"
         results[role] = {"passed": passed, "checks": checks}
     report = {"manifest": manifest, "profiles": results}
     (IMAGE / "results.json").write_text(json.dumps(report, indent=2) + "\n")

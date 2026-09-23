@@ -47,6 +47,7 @@ def main() -> None:
     overlay = cpio_file("init", init, stat.S_IFREG | 0o755)
     overlay += cpio_file("probe-boundary.py", (ROOT / "images/probe-boundary.py").read_bytes(), stat.S_IFREG | 0o644)
     overlay += cpio_file("probe-codex.py", (ROOT / "images/probe-codex.py").read_bytes(), stat.S_IFREG | 0o644)
+    overlay += cpio_file("probe-egress.py", (ROOT / "images/probe-egress.py").read_bytes(), stat.S_IFREG | 0o644)
     overlay += cpio_file("guest_transport", b"", stat.S_IFDIR | 0o755)
     for source in sorted((ROOT / "guest_transport").glob("*.py")):
         overlay += cpio_file("guest_transport/" + source.name, source.read_bytes(), stat.S_IFREG | 0o644)

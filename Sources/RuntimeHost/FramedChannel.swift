@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import PolicyCore
 
 public enum FrameError: String, Error, Sendable {
     case invalidFrame = "invalid_frame"
@@ -33,7 +34,7 @@ public final class FramedChannel: @unchecked Sendable {
         guard timeout.isFinite, timeout > 0 else { throw FrameError.timeout }
         readLock.lock()
         defer { readLock.unlock() }
-        let deadline = ProcessInfo.processInfo.systemUptime + min(max(timeout, 0), 180)
+        let deadline = DeadlineClock.now + min(timeout, 180)
         let header = try readExact(4, deadline: deadline)
         let count = header.reduce(0) { ($0 << 8) | Int($1) }
         guard (1...maximumBytes).contains(count) else { throw FrameError.invalidFrame }
@@ -45,7 +46,7 @@ public final class FramedChannel: @unchecked Sendable {
         guard (1...maximumBytes).contains(data.count) else { throw FrameError.invalidFrame }
         writeLock.lock()
         defer { writeLock.unlock() }
-        let deadline = ProcessInfo.processInfo.systemUptime + min(max(timeout, 0), 180)
+        let deadline = DeadlineClock.now + min(timeout, 180)
         let length = UInt32(data.count)
         var frame = Data([UInt8(length >> 24), UInt8((length >> 16) & 255), UInt8((length >> 8) & 255), UInt8(length & 255)])
         frame.append(data)
@@ -74,12 +75,13 @@ public final class FramedChannel: @unchecked Sendable {
 
     private func ready(_ event: Int16, deadline: TimeInterval) throws {
         while true {
-            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            let remaining = deadline - DeadlineClock.now
             guard remaining > 0 else { throw FrameError.timeout }
             var request = pollfd(fd: descriptor, events: event, revents: 0)
-            let result = poll(&request, 1, Int32(min(remaining * 1000 + 1, 180_000)))
+            let result = poll(&request, 1, Int32(min(remaining * 1000 + 1, 100)))
             if result < 0 && errno == EINTR { continue }
-            guard result != 0 else { throw FrameError.timeout }
+            if result == 0 { continue }
+            guard DeadlineClock.now < deadline else { throw FrameError.timeout }
             guard result > 0, request.revents & event != 0 else { throw FrameError.closed }
             return
         }

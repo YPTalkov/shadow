@@ -9,16 +9,18 @@ let package = Package(
         .library(name: "BrokerHost", targets: ["BrokerHost"]),
         .library(name: "RuntimeHost", targets: ["RuntimeHost"]),
         .library(name: "ModelRelay", targets: ["ModelRelay"]),
+        .library(name: "EgressGateway", targets: ["EgressGateway"]),
         .executable(name: "vm-config-probe", targets: ["VMConfigProbe"]),
         .executable(name: "vm-boot-probe", targets: ["VMBootProbe"]),
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
         .target(name: "BrokerHost", dependencies: ["PolicyCore"]),
-        .target(name: "RuntimeHost"),
-        .target(name: "ModelRelay"),
+        .target(name: "RuntimeHost", dependencies: ["PolicyCore"]),
+        .target(name: "ModelRelay", dependencies: ["PolicyCore"]),
+        .target(name: "EgressGateway", dependencies: ["PolicyCore"]),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
-        .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay"]),
-        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay"], path: "tests/PolicyCoreTests"),
+        .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway"]),
+        .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway"], path: "tests/PolicyCoreTests"),
     ]
 )

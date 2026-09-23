@@ -5,7 +5,7 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | Unit | State | Evidence or remaining work |
 |---|---|---|
 | U1 | Partial | KDBX interoperability and Swift builds pass; dependency audit and final image locks remain. |
-| U2 | In progress | Both no-NIC Linux profiles boot; root boundary/socket/disk probes and actual Linux Codex synthetic relay pass. Leased egress, watchdogs, live sign-in and production images remain. |
+| U2 | In progress | Both Linux profiles boot; root boundary probes, Linux Codex synthetic relay, and certificate-verified leased HTTPS pass. Browser-specific bypass tests, watchdogs, live sign-in and production images remain. |
 | U3 | Partial | Transaction and recovery primitives tested; private supervisor worker integration remains. |
 | U4 | Partial | Catalog, references, authority and restriction ledger tested; supervisor integration remains. |
 | U5 | Partial | Descriptor-based CSV preview/commit tested; native import flow remains. |

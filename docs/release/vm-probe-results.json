@@ -4,7 +4,7 @@
     "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
     "files": {
       "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
-      "initrd": "71d39306f07ec2bdf32df76e3de62e5222cec79b1733f641d16e085b0d6eb69c",
+      "initrd": "74b290d861eb180b2914521af212c7d6332052f892b454dc89154bbc2f1e27d8",
       "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
     }
   },
@@ -36,17 +36,19 @@
         "IP_ROUTE_COUNT": "0",
         "VSOCK_ROLE_BOUNDARY": "pass",
         "DIRECT_EGRESS": "denied",
-        "BASE_DISK": "readonly"
+        "BASE_DISK": "readonly",
+        "HTTPS_EGRESS": "pass",
+        "EGRESS_DESTINATIONS": "denied"
       }
     }
   },
   "target": {
     "os": "macOS 26.6.2 (25G83)",
     "architecture": "Apple Silicon ARM64",
-    "tested_at": "2026-09-23",
+    "tested_at_utc": "2026-09-23T22:11:24.511551+00:00",
     "codex": "0.156.1",
     "python_guest": "3.12.14",
-    "native_tests": 14
+    "native_tests": 19
   },
-  "probe_executable_sha256": "51fbc1d25ea497da47221955e15891af3c0bc4f1758763ac412c91a7cb219d57"
+  "probe_executable_sha256": "5b47435f36e5fd3918ce407118950c1a553c7c9d481599bb88d62543e3bca9a9"
 }

@@ -30,6 +30,9 @@ python3 /probe-boundary.py
 case "$(cat /proc/cmdline)" in
   *shadow.role=agent*) python3 /probe-codex.py ;;
 esac
+case "$(cat /proc/cmdline)" in
+  *shadow.role=browser*shadow.egress=1*) python3 /probe-egress.py ;;
+esac
 echo SHADOW_PROBE_END
 sync
 poweroff -f

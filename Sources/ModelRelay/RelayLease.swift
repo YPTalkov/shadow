@@ -1,4 +1,5 @@
 import Foundation
+import PolicyCore
 
 /// Identity and deadlines are supplied by the supervisor, never a guest envelope.
 public final class RelayLease: @unchecked Sendable {
@@ -20,7 +21,7 @@ public final class RelayLease: @unchecked Sendable {
         self.maximumInputBytes = max(0, maximumInputBytes)
     }
 
-    public func reserve(instance: String, boot: String, bytes: Int, now: TimeInterval = ProcessInfo.processInfo.systemUptime) throws {
+    public func reserve(instance: String, boot: String, bytes: Int, now: TimeInterval = DeadlineClock.now) throws {
         lock.lock()
         defer { lock.unlock() }
         try valid(instance: instance, boot: boot, now: now)
@@ -29,7 +30,7 @@ public final class RelayLease: @unchecked Sendable {
         inputBytes += bytes
     }
 
-    public func check(instance: String, boot: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime) throws {
+    public func check(instance: String, boot: String, now: TimeInterval = DeadlineClock.now) throws {
         lock.lock()
         defer { lock.unlock() }
         try valid(instance: instance, boot: boot, now: now)

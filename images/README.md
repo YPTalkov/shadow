@@ -10,6 +10,8 @@ Install squashfs to obtain unsquashfs, then run:
     codesign --force --sign - --entitlements packaging/virtualization.entitlements .build/arm64-apple-macosx/debug/vm-boot-probe
     uv run --frozen python scripts/run-vm-probe.py
 
+Set SHADOW_LIVE_EGRESS=1 for the optional live HTTPS test to example.com. This sends a HEAD request without credentials and verifies the destination certificate inside the browser VM.
+
 The fetcher verifies exact hashes for the official release archive, Codex executable archive, and Python's Alpine packages. The builder does not extract guest filesystem symlinks onto the host. It writes a CPIO archive and records kernel, initrd and disk hashes in .build/guest-cache/probe/manifest.json. The runner records bounded result fields in results.json; synthetic console output is kept beside it for diagnosis.
 
 Alpine's kernel is an EFI zboot wrapper. The builder extracts its gzip payload using the offset and size defined by the [Linux zboot header](https://github.com/torvalds/linux/blob/v6.12/drivers/firmware/efi/libstub/zboot-header.S), yielding the ARM64 Image required by VZLinuxBootLoader.

@@ -2,6 +2,8 @@ import Foundation
 import RuntimeHost
 import Virtualization
 import ModelRelay
+import EgressGateway
+import PolicyCore
 
 @MainActor
 final class Probe: NSObject, VZVirtualMachineDelegate {
@@ -19,6 +21,7 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
         )
         guard let loader = config.bootLoader as? VZLinuxBootLoader else { throw VMConfigurationError.unsafeImage }
         loader.commandLine = "console=hvc0 rdinit=/init panic=-1 shadow.role=\(args[1])"
+        if ProcessInfo.processInfo.environment["SHADOW_LIVE_EGRESS"] == "1" { loader.commandLine += " shadow.egress=1" }
         let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
         serial.attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: nil, fileHandleForWriting: .standardOutput)
         config.serialPorts = [serial]
@@ -26,7 +29,7 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
         let machine = VZVirtualMachine(configuration: config)
         vm = machine
         machine.delegate = self
-        channels = try InstanceChannels(machine: machine, role: args[1] == "browser" ? .browser : .agent) { [weak self] connection, _, channel in
+        channels = try InstanceChannels(machine: machine, role: args[1] == "browser" ? .browser : .agent) { [weak self] connection, identity, channel in
             do {
                 let transport = try FramedChannel(descriptor: connection.fileDescriptor, maximumBytes: 4 * 1024 * 1024)
                 let data = try transport.read(timeout: 3)
@@ -35,6 +38,15 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
                     try transport.write(JSONSerialization.data(withJSONObject: ["kind": "probe", "channel": channel.rawValue]))
                 } else if channel == .agentModel {
                     try Self.syntheticModel(message, transport: transport)
+                } else if channel == .browserEgress {
+                    guard Set(message.keys) == ["host", "port"], let host = message["host"] as? String,
+                          let port = message["port"] as? Int, port == 443 else { throw FrameError.invalidFrame }
+                    let destination = try HTTPSDestination(host: host, port: 443)
+                    let instance = identity.instance.uuidString, boot = identity.boot.uuidString
+                    let lease = EgressLease(instance: instance, boot: boot, session: "synthetic-session", destinations: [try HTTPSDestination(host: "example.com", port: 443)], expiresAt: DeadlineClock.now + 10)
+                    try Gateway.tunnel(guest: connection.fileDescriptor, destination: destination, lease: lease, instance: instance, boot: boot, session: "synthetic-session") {
+                        try transport.write(JSONSerialization.data(withJSONObject: ["kind": "connected"]))
+                    }
                 } else { throw FrameError.invalidFrame }
             } catch let error as RelayError {
                 print("relay_probe_\(error.rawValue)")
