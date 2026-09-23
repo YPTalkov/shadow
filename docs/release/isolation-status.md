@@ -1,0 +1,7 @@
+# Runtime isolation status
+
+The native configuration code builds separate agent and browser VM profiles. Both have zero virtual network devices, zero host directory shares, one virtio socket device, and one read-only disk device. Only the browser role has a graphics scanout. The three image inputs are SHA-256 checked before configuration. Synthetic tests reject an image changed after its expected hash was recorded.
+
+The `vm-config-probe` developer executable was ad-hoc signed with `packaging/virtualization.entitlements` on the Apple Silicon target Mac. On 2026-09-23, `VZVirtualMachineConfiguration.validate()` returned `configuration_valid` for both device profiles using zero-filled synthetic kernel, ramdisk, and image files. This establishes entitlement/configuration availability, **not a Linux boot or isolation boundary**. The [Apple Virtualization configuration documentation](https://developer.apple.com/documentation/virtualization/vzvirtualmachineconfiguration) requires the virtualization entitlement and describes its separate network, socket, and directory-sharing device lists.
+
+U2 remains open. No guest image has been built or booted; there is no guest socket protocol, model relay, egress gateway, watchdog, root-in-guest attack result, or actual agent-client run. No vault secret is connected to a browser. Until the complete VM and network tests pass, an unrestricted same-user agent is outside the product's supported security boundary.
