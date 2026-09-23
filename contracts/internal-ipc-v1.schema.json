@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YPTalkov/shadow/contracts/internal-ipc/v1",
+  "title": "Shadow private framed request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_major", "channel_epoch", "sequence", "kind", "payload"],
+  "properties": {
+    "protocol_major": {"const": 1},
+    "channel_epoch": {"type": "string", "format": "uuid"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "kind": {"type": "string", "maxLength": 64},
+    "payload": {"type": "object"}
+  }
+}

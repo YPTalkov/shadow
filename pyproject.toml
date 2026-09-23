@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shadow-credential-vault"
+version = "0.1.0"
+description = "Local credential vault and protected agent tools"
+requires-python = "==3.12.*"
+dependencies = ["pykeepass==4.2.0"]
+
+[dependency-groups]
+dev = ["pytest==8.4.2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vault_worker", "agent_tools", "browser_worker", "guest_transport"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

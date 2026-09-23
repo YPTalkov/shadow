@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YPTalkov/shadow/contracts/agent-api/v1",
+  "title": "Shadow agent request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_major", "request_id", "operation", "arguments"],
+  "properties": {
+    "protocol_major": {"const": 1},
+    "request_id": {"type": "string", "format": "uuid"},
+    "operation": {
+      "enum": ["vault.status", "catalog.search", "access.request", "auth.login", "browser.observe", "browser.extract", "browser.navigate", "browser.click", "browser.scroll", "browser.fill_nonsecret", "operation.get", "operation.cancel", "operation.resume", "session.close", "connector.request_refresh"]
+    },
+    "arguments": {"type": "object", "maxProperties": 8}
+  }
+}
