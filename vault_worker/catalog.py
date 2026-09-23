@@ -11,6 +11,7 @@ import unicodedata
 from urllib.parse import urlsplit
 
 from pykeepass import PyKeePass
+from .secret_guard import SecretGuard, REDACTED
 
 
 class CatalogError(Exception):
@@ -42,10 +43,6 @@ def _origin(url: str | None) -> str | None:
         return f"https://{host}"
     except (ValueError, UnicodeError):
         return None
-
-
-def _bounded(text: str | None, max_chars: int = 256) -> str:
-    return (text or "")[:max_chars]
 
 
 @dataclass(frozen=True)
@@ -82,14 +79,21 @@ class Catalog:
     @classmethod
     def from_vault(cls, vault: PyKeePass) -> Catalog:
         items: list[CatalogItem] = []
+        guard = SecretGuard.from_vault(vault)
+        recycle = vault.recyclebin_group
         for entry in vault.entries:
-            origin = _origin(entry.url)
+            if recycle is not None and recycle._element in entry._element.iterancestors():
+                continue
+            def protected(key):
+                value = entry._element.find(f"String[Key='{key}']/Value")
+                return value is not None and value.get("Protected") == "True"
+            origin = "" if protected("URL") else guard.project(_origin(entry.url), maximum=512)
             items.append(CatalogItem(
                 id=str(entry.uuid),
-                title=_bounded(entry.title),
-                username=_bounded(entry.username),
-                origins=(origin,) if origin else (),
-                group=_bounded(entry.group.name if entry.group else ""),
+                title=REDACTED if protected("Title") else guard.project(entry.title),
+                username=REDACTED if protected("UserName") else guard.project(entry.username),
+                origins=(origin,) if origin and origin != REDACTED else (),
+                group=guard.project(" / ".join(entry.group.path) if entry.group else ""),
             ))
         return cls(items)
 

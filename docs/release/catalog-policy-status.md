@@ -7,3 +7,8 @@ The native restriction ledger appends source deletion, access loss, stale mirror
 `uv run --frozen pytest tests/catalog`: 3 passed. `sh scripts/test-swift.sh`: 7 passed. These are component tests using synthetic data.
 
 This unit is not complete: supervisor issuance and revocation are not wired to the public protocol, source provenance has not been populated from a connector, and active sessions are not yet closed by restriction events. The production runtime must never substitute the deterministic test reference factory for native random references. No real credential use is approved.
+# Projection defense follow-up
+
+Catalog and CSV preview now check allowlisted metadata against known protected values across entries/rows, including literal, URL-encoded and base64 forms. The in-memory matcher has a fixed memory/input budget and withholds all metadata if that budget is exceeded. Explicitly protected titles, usernames and URLs are withheld directly, including long values; entries under KeePassXC's recycle bin are omitted. Catalog groups now use their display path.
+
+`uv run --frozen pytest tests/catalog tests/import tests/compat`: 27 passed. Cases include cross-account reflection, encoded reflection, protected metadata, recycled entries, CSV cross-row reflection, matcher overflow and overlapping patterns. This is defense in depth for typed projections; it does not authorize generic text/HTML output or prove every possible encoding safe. Full cross-boundary canary qualification remains in U13.

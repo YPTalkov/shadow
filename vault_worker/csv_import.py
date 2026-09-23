@@ -12,6 +12,7 @@ import stat
 from urllib.parse import urlsplit
 
 from .store import SkipMutation, VaultStore, VaultStoreError
+from .secret_guard import SecretGuard
 
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -206,6 +207,8 @@ class SelectedCSV:
                     if len(public) < 50:
                         public.append({"title": title[:256], "origin": origin, "username": username[:256], "group": group[:256]})
                 self._rows = tuple(accepted)
+                guard = SecretGuard(value for row in accepted for value in (row.password, row.notes, row.totp))
+                public = [{key: guard.project(value, maximum=512 if key == "origin" else 256) for key, value in row.items()} for row in public]
                 self._preview = ImportPreview(len(accepted), rejected, tuple(public), ("invalid_rows",) if rejected else ())
                 return self._preview
             finally:

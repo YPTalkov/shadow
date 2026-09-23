@@ -128,6 +128,8 @@ class BoundedXML(common.XML):
                 raise BoundedKDBXError("unsupported_profile")
             if element.attrib.get("Protected", "False") not in {"True", "False"}:
                 raise BoundedKDBXError("invalid_vault")
+            if "Protected" in element.attrib and element.tag != "Value":
+                raise BoundedKDBXError("unsupported_profile")
             if element.tag == "Entry":
                 entries += 1
                 if entries > 100_000:  # Includes entry history.
