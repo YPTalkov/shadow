@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "BrokerHost", targets: ["BrokerHost"]),
     ],
     targets: [
-        .target(name: "PolicyCore"),
+        .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
         .target(name: "BrokerHost", dependencies: ["PolicyCore"]),
         .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore"], path: "tests/PolicyCoreTests"),
     ]
