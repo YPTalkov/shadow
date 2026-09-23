@@ -9,7 +9,7 @@ if [ -d "$frameworks/Testing.framework" ] && [ -f "$interop/lib_TestingInterop.d
     -Xswiftc "-F$frameworks" \
     -Xlinker "-F$frameworks" \
     -Xlinker -rpath -Xlinker "$frameworks" \
-    -Xlinker -rpath -Xlinker "$interop"
+    -Xlinker -rpath -Xlinker "$interop" "$@"
 fi
 
-exec swift test
+exec swift test "$@"

@@ -10,6 +10,24 @@ MASTER = "synthetic-master-password"
 MAPPING = CSVMapping(title="Title", url="URL", username="Username", password="Password", notes="Notes", group="Group")
 
 
+def test_unicode_preview_fits_a_bounded_metadata_response(tmp_path):
+    source = tmp_path / "unicode.csv"
+    label = "🧪" * 256
+    source.write_text("Title,URL,Username,Password,Notes,Group\n" + (f"{label},https://example.invalid,{label},synthetic-canary,,{label}\n" * 50))
+    with SelectedCSV(source, MAPPING) as selected:
+        preview = selected.preview().public()
+    assert preview["accepted"] == 50
+    assert 0 < len(preview["rows"]) < 50
+    assert len(json.dumps(preview, ensure_ascii=False).encode()) < 64 * 1024
+
+
+def test_oversized_unicode_headers_are_rejected_before_owner_display(tmp_path):
+    source = tmp_path / "headers.csv"
+    source.write_text(",".join("🧪" * 250 + str(index) for index in range(128)) + "\n")
+    with SelectedCSV(source, MAPPING) as selected, pytest.raises(CSVImportError):
+        selected.headers()
+
+
 def test_bom_multiline_unicode_and_idempotent_commit(tmp_path):
     source = tmp_path / "synthetic.csv"
     source.write_bytes(("\ufeffTitle,URL,Username,Password,Notes,Group,Unused\r\n"

@@ -71,7 +71,7 @@ private struct NativeConsentCard: View {
                 if request.kind == .catalog {
                     Text("Select each account this agent may discover. No accounts are selected by default.").foregroundStyle(.secondary)
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
+                        LazyVStack(alignment: .leading, spacing: 10) {
                             ForEach(access.accounts.filter { request.availableAccountIDs.contains($0.id) }) { account in
                                 Toggle(isOn: Binding(get: { selected.contains(account.id) }, set: { if $0 { selected.insert(account.id) } else { selected.remove(account.id) } })) {
                                     VStack(alignment: .leading, spacing: 3) {

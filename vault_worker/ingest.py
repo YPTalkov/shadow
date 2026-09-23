@@ -145,12 +145,14 @@ def bump(entry):
 
 
 class IngestSession:
-    def __init__(self, store: VaultStore, password: str, enrollment: SourceEnrollment, epoch: str, *, restrict, now=None):
+    def __init__(self, store: VaultStore, password: str, enrollment: SourceEnrollment, epoch: str, *, restrict, now=None, invalidate=None, flush_restrictions=None):
         if str(uuid.UUID(enrollment.instance)) != enrollment.instance or str(uuid.UUID(epoch)) != epoch or len(enrollment.digest_key) != 32:
             raise IngestError("invalid_enrollment")
         self.store, self.password, self.enrollment, self.epoch = store, password, enrollment, epoch
         self.restrict = restrict
         self.now = now or (lambda: datetime.now(timezone.utc))
+        self.invalidate = invalidate or (lambda _: None)
+        self.flush_restrictions = flush_restrictions or (lambda: None)
         self.stage: dict | None = None
 
     def abort(self):
@@ -342,6 +344,7 @@ class IngestSession:
                         if record["item_id"] in known:
                             raise IngestError("ambiguous_identity")
                         known[record["item_id"]] = (entry, record)
+            self.invalidate([str(entry.uuid) for entry, _ in mirrored])
             accepted = conflicted = retained = 0
             warnings = set()
             deleted_items = {event["id"] for event in stage["deletions"] if event["target"] == "item"}
@@ -436,6 +439,7 @@ class IngestSession:
             result = {"batch_id": stage["batch"], "receipt_ref": secrets.token_hex(32), "generation": source["generation"] + 1, "accepted": accepted, "conflicted": conflicted, "retained": retained, "warnings": sorted(warnings)}
             metadata.put(meta, source_key, {"instance": enrollment.instance, "label": enrollment.label, "generation": result["generation"], "last_received": host_time, "coverage": list(stage["coverage"].values()), "capability_version": caps.version})
             metadata.put(meta, batch_key, {"digest": batch_digest, "receipt": result})
+            self.flush_restrictions()
 
         error = None
         def checked_mutate(vault):

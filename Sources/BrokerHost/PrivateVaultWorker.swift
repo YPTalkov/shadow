@@ -30,14 +30,29 @@ public struct OwnerCatalogItem: Codable, Identifiable, Sendable, Equatable {
     public let username: String
     public let origins: [String]
     public let group: String
-    public let sourceKind: String
-    public let presence: String
+    public var sourceKind: String
+    public var presence: String
     public let authorization: String
     public let revision: UInt64
+    public let observedAt: String?
+    public let sourceInstance: String?
+    public var restrictionEvent: String?
+    public let conflicted: Bool
+    public let diverged: Bool
 
-    public init(id: String, title: String, username: String, origins: [String], group: String, sourceKind: String = "local", presence: String = "present", authorization: String = "unapproved", revision: UInt64 = 1) {
+    public init(id: String, title: String, username: String, origins: [String], group: String, sourceKind: String = "local", presence: String = "present", authorization: String = "unapproved", revision: UInt64 = 1, observedAt: String? = nil, sourceInstance: String? = nil, restrictionEvent: String? = nil, conflicted: Bool = false, diverged: Bool = false) {
         self.id = id; self.title = title; self.username = username; self.origins = origins; self.group = group
         self.sourceKind = sourceKind; self.presence = presence; self.authorization = authorization; self.revision = revision
+        self.observedAt = observedAt; self.sourceInstance = sourceInstance; self.restrictionEvent = restrictionEvent; self.conflicted = conflicted; self.diverged = diverged
+    }
+
+    public var observationDate: Date? {
+        guard let observedAt else { return nil }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = parser.date(from: observedAt) { return date }
+        parser.formatOptions = [.withInternetDateTime]
+        return parser.date(from: observedAt)
     }
 }
 
@@ -91,17 +106,21 @@ public actor PrivateVaultWorker {
     private let process: Process
     private let transport: FramedChannel
     private let anchor: GenerationAnchor
+    private let restrictions: NativeRestrictions
+    private let onInvalidate: @MainActor @Sendable ([UUID]) -> Void
     private let epoch = UUID().uuidString.lowercased()
     private var sequence = 0
     private var busy = false
     private var closed = false
 
-    private init(python: URL, vaultID: String) throws {
+    private init(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void) throws {
+        self.onInvalidate = onInvalidate
+        restrictions = NativeRestrictions(vaultDirectory: vaultDirectory, vaultID: vaultID)
         var pair: [Int32] = [-1, -1]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { throw VaultWorkerError.unavailable }
         defer { Darwin.close(pair[0]); Darwin.close(pair[1]) }
         guard fcntl(pair[0], F_SETFD, FD_CLOEXEC) == 0, fcntl(pair[1], F_SETFD, FD_CLOEXEC) == 0 else { throw VaultWorkerError.unavailable }
-        transport = try FramedChannel(descriptor: pair[0])
+        transport = try FramedChannel(descriptor: pair[0], maximumBytes: 2 * 1024 * 1024)
         anchor = GenerationAnchor(vaultID: vaultID)
         let child = FileHandle(fileDescriptor: pair[1], closeOnDealloc: false)
         process = Process()
@@ -119,8 +138,8 @@ public actor PrivateVaultWorker {
         if process.isRunning { process.terminate() }
     }
 
-    public static func launch(python: URL, vaultDirectory: URL, vaultID: String) async throws -> PrivateVaultWorker {
-        let worker = try PrivateVaultWorker(python: python, vaultID: vaultID)
+    public static func launch(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void = { _ in }) async throws -> PrivateVaultWorker {
+        let worker = try PrivateVaultWorker(python: python, vaultDirectory: vaultDirectory, vaultID: vaultID, onInvalidate: onInvalidate)
         do {
             let _: State = try await worker.request("initialize", payload: Initialize(vaultDirectory: vaultDirectory.path))
             return worker
@@ -166,7 +185,69 @@ public actor PrivateVaultWorker {
     }
 
     public func catalog(offset: Int = 0) async throws -> OwnerCatalogPage {
-        try await request("owner.catalog", payload: Page(offset: offset))
+        let page: OwnerCatalogPage = try await request("owner.catalog", payload: Page(offset: offset))
+        do {
+            var events = try restrictions.latest(requireExisting: page.items.contains { $0.sourceKind == "mirrored" })
+            var items: [OwnerCatalogItem] = []
+            for var item in page.items {
+                guard let id = UUID(uuidString: item.id) else { throw VaultWorkerError.unavailable }
+                if let expected = item.restrictionEvent, events[id] == nil || UUID(uuidString: expected) == nil { throw VaultWorkerError.reported("recovery_required") }
+                if item.sourceKind == "mirrored", events[id] == nil {
+                    let observed = item.observationDate
+                    let unknown = observed == nil || observed! > Date().addingTimeInterval(60) || item.presence != "present"
+                    if unknown || Date().timeIntervalSince(observed!) > 86400 {
+                        let event = RestrictionEvent(id: UUID(), account: id, kind: unknown ? .historyUnknown : .staleMirror)
+                        await onInvalidate([id])
+                        try restrictions.record([event])
+                        events[id] = event
+                    }
+                }
+                if let event = events[id] {
+                    item.restrictionEvent = event.id.uuidString.lowercased()
+                    if item.sourceKind != "mirrored" { item.sourceKind = "mirrored"; item.presence = "unknown" }
+                }
+                items.append(item)
+            }
+            return OwnerCatalogPage(items: items, nextOffset: page.nextOffset)
+        } catch { throw VaultWorkerError.reported("recovery_required") }
+    }
+
+    public func configureSource(instance: UUID, label: String, epoch: UUID, capabilities: SourceCapabilities, digestKey: Data) async throws {
+        guard !busy, !closed, digestKey.count == 32 else { throw VaultWorkerError.unavailable }
+        try restrictions.initializeForEnrollment()
+        let _: State = try await request("source.configure", payload: SourceConfiguration(instance: instance.uuidString.lowercased(), label: label, epoch: epoch.uuidString.lowercased(), capabilities: capabilities, digestKey: digestKey.base64EncodedString()))
+    }
+
+    public func catalogSnapshot() async throws -> [OwnerCatalogItem] {
+        var result: [OwnerCatalogItem] = []
+        var offset = 0
+        repeat {
+            let page = try await catalog(offset: offset)
+            result += page.items
+            guard result.count <= 50_000 else { throw VaultWorkerError.unavailable }
+            guard let next = page.nextOffset else { return result }
+            guard next > offset, !page.items.isEmpty else { throw VaultWorkerError.unavailable }
+            offset = next
+        } while true
+    }
+
+    public func sourceFrame(instance: UUID, frame: Data) async throws -> SourceFrameResult {
+        guard !frame.isEmpty, frame.count <= 1024 * 1024 else { throw VaultWorkerError.unavailable }
+        return try await request("source.frame", payload: SourceFrame(instance: instance.uuidString.lowercased(), frame: frame.base64EncodedString()))
+    }
+
+    public func closeSource(instance: UUID) async throws {
+        let _: State = try await request("source.close", payload: SourceInstance(instance: instance.uuidString.lowercased()))
+    }
+
+    public func sources(instances: [UUID]) async throws -> [OwnerSourceSummary] {
+        guard instances.count <= 16 else { throw VaultWorkerError.unavailable }
+        let result: SourceStatus = try await request("source.status", payload: SourceStatusRequest(instances: instances.map { $0.uuidString.lowercased() }))
+        return result.sources
+    }
+
+    public func resolveConflict(entry: UUID, revision: UInt64, choice: String, operationID: UUID) async throws -> OwnerConflictResult {
+        try await request("source.resolve_conflict", payload: ResolveConflict(entryId: entry.uuidString.lowercased(), expectedRevision: revision, choice: choice, operationId: operationID.uuidString.lowercased()))
     }
 
     public func editorStatus() async throws -> OwnerEditorStatus {
@@ -199,8 +280,8 @@ public actor PrivateVaultWorker {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try encoder.encode(Envelope(channelEpoch: epoch, sequence: current, kind: kind, payload: payload))
-        let channel = transport, authority = anchor, channelEpoch = epoch
-        let task = Task.detached { try Self.exchange(data, channel: channel, anchor: authority, epoch: channelEpoch, sequence: current) }
+        let channel = transport, authority = anchor, channelEpoch = epoch, restrictions = restrictions, invalidate = onInvalidate
+        let task = Task.detached { try await Self.exchange(data, channel: channel, anchor: authority, restrictions: restrictions, invalidate: invalidate, epoch: channelEpoch, sequence: current) }
         do {
             let reply = try await withTaskCancellationHandler {
                 try await task.value
@@ -227,9 +308,9 @@ public actor PrivateVaultWorker {
         }
     }
 
-    private nonisolated static func exchange(_ request: Data, channel: FramedChannel, anchor: GenerationAnchor, epoch: String, sequence: Int) throws -> Reply {
+    private nonisolated static func exchange(_ request: Data, channel: FramedChannel, anchor: GenerationAnchor, restrictions: NativeRestrictions, invalidate: @escaping @MainActor @Sendable ([UUID]) -> Void, epoch: String, sequence: Int) async throws -> Reply {
         try channel.write(request)
-        for _ in 0..<32 {
+        for _ in 0..<4096 {
             let data = try channel.read(timeout: 60)
             guard let message = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   Set(message.keys) == ["protocol_major", "channel_epoch", "sequence", "kind", "payload"],
@@ -238,6 +319,23 @@ public actor PrivateVaultWorker {
                   let payload = message["payload"] as? [String: Any] else { throw VaultWorkerError.unavailable }
             if kind == "result" || kind == "error" {
                 return Reply(kind: kind, payload: try JSONSerialization.data(withJSONObject: payload))
+            }
+            if kind == "mutation.invalidate", Set(payload.keys) == ["accounts"], let raw = payload["accounts"] as? [String], raw.count <= 256 {
+                let accounts = raw.compactMap(UUID.init(uuidString:))
+                guard accounts.count == raw.count else { throw VaultWorkerError.unavailable }
+                await invalidate(accounts)
+                try nativeAcknowledgement(channel: channel, epoch: epoch, sequence: sequence)
+                continue
+            }
+            if kind == "restriction.record", Set(payload.keys) == ["events"], let raw = payload["events"] as? [[String: String]], raw.count <= 256 {
+                let events = try raw.map { event -> RestrictionEvent in
+                    guard Set(event.keys) == ["account", "kind", "event_id"], let account = UUID(uuidString: event["account"]!), let id = UUID(uuidString: event["event_id"]!), let kind = RestrictionKind(rawValue: event["kind"]!) else { throw VaultWorkerError.unavailable }
+                    return RestrictionEvent(id: id, account: account, kind: kind)
+                }
+                await invalidate(events.map(\.account))
+                try restrictions.record(events)
+                try nativeAcknowledgement(channel: channel, epoch: epoch, sequence: sequence)
+                continue
             }
             let digest: String?
             if kind == "anchor.read", payload.isEmpty {
@@ -252,6 +350,10 @@ public actor PrivateVaultWorker {
             try channel.write(JSONSerialization.data(withJSONObject: response))
         }
         throw VaultWorkerError.unavailable
+    }
+
+    private nonisolated static func nativeAcknowledgement(channel: FramedChannel, epoch: String, sequence: Int) throws {
+        try channel.write(JSONSerialization.data(withJSONObject: ["protocol_major": 1, "channel_epoch": epoch, "sequence": sequence, "kind": "native.result", "payload": ["state": "accepted"]]))
     }
 
     private struct Envelope<P: Encodable>: Encodable {
@@ -274,5 +376,11 @@ public actor PrivateVaultWorker {
     private struct Empty: Encodable, Sendable {}
     private struct EditorCommit: Encodable, Sendable { let reviewId: String }
     private struct EditorCancel: Encodable, Sendable { let discard: Bool }
-    private static let safeCodes: Set<String> = ["unsafe_path", "writer_busy", "recovery_required", "already_exists", "storage_unavailable", "invalid_credentials", "invalid_vault", "unsupported_profile", "kdf_limit_exceeded", "external_modification", "unsafe_source", "source_unavailable", "source_changed", "limit_exceeded", "invalid_mapping", "invalid_rows", "invalid_csv", "preview_required", "invalid_request", "operation_conflict", "vault_unavailable", "vault_locked", "unsupported_operation", "worker_unavailable", "editor_active", "editor_unavailable", "editor_changed"]
+    private struct SourceConfiguration: Encodable, Sendable { let instance: String; let label: String; let epoch: String; let capabilities: SourceCapabilities; let digestKey: String }
+    private struct SourceFrame: Encodable, Sendable { let instance: String; let frame: String }
+    private struct SourceInstance: Encodable, Sendable { let instance: String }
+    private struct SourceStatus: Decodable, Sendable { let sources: [OwnerSourceSummary] }
+    private struct SourceStatusRequest: Encodable, Sendable { let instances: [String] }
+    private struct ResolveConflict: Encodable, Sendable { let entryId: String; let expectedRevision: UInt64; let choice: String; let operationId: String }
+    private static let safeCodes: Set<String> = ["already_exists", "ambiguous_identity", "batch_conflict", "contradictory_coverage", "contradictory_evidence", "editor_active", "editor_changed", "editor_unavailable", "external_modification", "generation_conflict", "history_limit", "identity_mismatch", "invalid_credentials", "invalid_csv", "invalid_enrollment", "invalid_group_hierarchy", "invalid_mapping", "invalid_record", "invalid_request", "invalid_rows", "invalid_vault", "kdf_limit_exceeded", "limit_exceeded", "operation_conflict", "preview_required", "recovery_required", "sequence_mismatch", "source_changed", "source_unavailable", "stale_conflict", "storage_unavailable", "unknown_group", "unlinked_identity", "unsafe_path", "unsafe_source", "unstable_identity", "unsupported_credential", "unsupported_evidence", "unsupported_message", "unsupported_operation", "unsupported_profile", "unsupported_version", "vault_locked", "vault_unavailable", "worker_unavailable", "writer_busy"]
 }

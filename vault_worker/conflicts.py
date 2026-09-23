@@ -81,7 +81,7 @@ def _local_copy(vault, entry, source):
     apply_fields(clone, entry_fields(entry))
     for key, value in entry.custom_properties.items():
         if not key.startswith("shadow."):
-            clone.set_custom_property(key, value, protect=True)
+            clone.set_custom_property(key, value or "", protect=True)
     history = entry._element.find("History")
     if history is not None:
         cloned_history = deepcopy(history)

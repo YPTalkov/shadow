@@ -6,6 +6,7 @@ import csv
 from dataclasses import dataclass, field
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -59,10 +60,15 @@ class ImportPreview:
     codes: tuple[str, ...]
 
     def public(self) -> dict[str, object]:
+        rows = []
+        for row in self.rows:
+            if len(json.dumps(rows + [row], ensure_ascii=False).encode()) > 60 * 1024:
+                break
+            rows.append(row)
         return {
             "accepted": self.accepted,
             "rejected": self.rejected,
-            "rows": list(self.rows),
+            "rows": rows,
             "codes": list(self.codes),
             "plaintext_source_warning": True,
         }
@@ -121,7 +127,7 @@ class SelectedCSV:
     def headers(self) -> list[str]:
         try:
             headers = next(csv.reader(io.StringIO(self._read().decode("utf-8-sig"), newline=""), strict=True))
-            if not headers or len(headers) > 128 or len(set(headers)) != len(headers) or any(not name or len(name) > 256 for name in headers):
+            if not headers or len(headers) > 128 or len(set(headers)) != len(headers) or any(not name or len(name) > 256 for name in headers) or len(json.dumps(headers, ensure_ascii=False).encode()) > 60 * 1024:
                 raise CSVImportError("invalid_csv")
             return headers
         except (UnicodeError, csv.Error, StopIteration):

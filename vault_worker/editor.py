@@ -143,7 +143,7 @@ class EditorHandoff:
                 if key.startswith("shadow."):
                     entry.delete_custom_property(key)
             for key, value in policy.items():
-                entry.set_custom_property(key, value, protect=True)
+                entry.set_custom_property(key, value or "", protect=True)
             if previous is None:
                 entry.set_custom_property("shadow.authority.kind", "local", protect=True)
                 entry.set_custom_property("shadow.revision", "1", protect=True)

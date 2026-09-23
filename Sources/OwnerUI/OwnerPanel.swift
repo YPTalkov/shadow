@@ -61,7 +61,7 @@ public struct OwnerPanel: View {
                     case .vault: vault
                     case .importCSV: importView
                     case .access: AgentAccessView(access: model.access)
-                    case .sources: ContentUnavailableView("No sources enrolled", systemImage: "arrow.triangle.2.circlepath", description: Text("CSV imports work independently. An optional connector can be enrolled after its consumer is qualified."))
+                    case .sources: SourcesView(model: model)
                     case .recovery: recovery
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)

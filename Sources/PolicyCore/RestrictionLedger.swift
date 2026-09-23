@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
 
@@ -45,6 +46,9 @@ public final class RestrictionLedger {
         let existed = FileManager.default.fileExists(atPath: path.path)
         guard !path.hasDirectoryPath else { throw RestrictionLedgerError.unsafePath }
         let parent = path.deletingLastPathComponent()
+        var details = stat()
+        guard lstat(parent.path, &details) == 0, details.st_mode & S_IFMT == S_IFDIR,
+              details.st_uid == getuid() else { throw RestrictionLedgerError.unsafePath }
         let parentAttributes = try FileManager.default.attributesOfItem(atPath: parent.path)
         guard parentAttributes[.type] as? FileAttributeType == .typeDirectory,
               let parentPermissions = parentAttributes[.posixPermissions] as? Int,
@@ -52,6 +56,8 @@ public final class RestrictionLedger {
             throw RestrictionLedgerError.unsafePath
         }
         if existed {
+            guard lstat(path.path, &details) == 0, details.st_mode & S_IFMT == S_IFREG,
+                  details.st_uid == getuid(), details.st_nlink == 1 else { throw RestrictionLedgerError.unsafePath }
             let values = try path.resourceValues(forKeys: [.isSymbolicLinkKey])
             guard values.isSymbolicLink != true else { throw RestrictionLedgerError.unsafePath }
             let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
@@ -63,7 +69,14 @@ public final class RestrictionLedger {
         } else if try anchor.read() != nil {
             throw RestrictionLedgerError.recoveryRequired
         }
-        guard sqlite3_open_v2(path.path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+        if !existed {
+            let fd = Darwin.open(path.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { throw RestrictionLedgerError.unsafePath }
+            Darwin.close(fd)
+        }
+        guard let canonical = realpath(path.path, nil) else { throw RestrictionLedgerError.unsafePath }
+        defer { free(canonical) }
+        guard sqlite3_open_v2(canonical, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nil) == SQLITE_OK else {
             throw RestrictionLedgerError.storageUnavailable
         }
         do {
@@ -71,7 +84,11 @@ public final class RestrictionLedger {
             try execute("PRAGMA journal_mode=DELETE")
             try execute("CREATE TABLE IF NOT EXISTS restriction_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, account TEXT NOT NULL, kind TEXT NOT NULL, previous TEXT NOT NULL, head TEXT NOT NULL)")
             if !existed {
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+                let fd = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard fd >= 0 else { throw RestrictionLedgerError.storageUnavailable }
+                let synced = fsync(fd)
+                Darwin.close(fd)
+                guard synced == 0 else { throw RestrictionLedgerError.storageUnavailable }
                 try anchor.advance(expected: nil, to: Self.genesis)
             }
             fileIdentity = try FileManager.default.attributesOfItem(atPath: path.path)[.systemFileNumber] as? NSNumber

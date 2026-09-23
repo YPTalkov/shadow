@@ -104,6 +104,18 @@ Apple-specific live evidence belongs to the connector project. Passing this suit
 
 ## JSON wire profile
 
+### Native launch profile
+
+An enrolled macOS `.app` contains a valid code signature, an executable and a sealed `Contents/Resources/shadow-source.json` with exactly `contract_major: 1` and the capability object below. The owner sees its identifier, executable SHA-256 and capabilities before enrollment. This first implementation pins the executable and the running process CDHash; an app update requires new enrollment. Ad hoc signatures are accepted as exact local code identities, not as claims about a publisher's trustworthiness.
+
+The supervisor launches the executable with the single argument `--shadow-source-v1`, a minimal environment and an inherited full-duplex socket on stdin/stdout. Stderr is discarded. After validating the running image, the supervisor sends a framed object with `contract_major`, `kind: "refresh"`, `source_instance_id`, `channel_epoch`, `request_id`, `previous_generation`, and `scope: "account"`. The producer sends one transaction and waits for an acknowledgement after every frame: `{state: "collecting" | "committed" | "aborted", receipt: object | null}`. A committed receipt has the fields defined below. Disconnect before acknowledgement is an uncertain receipt, resolved by exact batch replay.
+
+A producer that cannot collect may instead send a terminal object containing exactly `contract_major`, `kind: "status"`, the same instance/epoch/request IDs, and `state: "needs_owner_action" | "unsupported" | "not_configured"`. This status cannot carry descriptive text or source payloads. Collection has a 60-second idle and five-minute total deadline. Lock/cancellation closes the channel and terminates the launched producer. Producers must stop on EOF and must not detach collection processes. No periodic schedule is enabled by enrollment.
+
+The app's private worker IPC may use up to 2 MiB to carry a base64-encoded source frame. The producer frame remains 1 MiB and the public agent frame remains 64 KiB.
+
+### Transaction encoding
+
 The initial implementation uses UTF-8 JSON with a four-byte unsigned big-endian byte-length prefix. No compression is accepted. Duplicate JSON object keys, nesting beyond 12 levels, floating-point/nonfinite numbers, and unknown envelope/payload fields are rejected. The frame limit remains 1 MiB. `producer_sequence` is scoped to a batch: begin is zero, each following frame increments by one, and commit's `final_sequence` equals its own sequence. A reconnect gets a fresh host epoch. An exact batch replay uses its original semantic frames and batch ID; the HMAC excludes only the authenticated channel epoch. The HMAC includes length-delimited canonical JSON frames with sorted keys, compact separators and unescaped UTF-8.
 
 The envelope keys are `contract_major`, `source_instance_id`, `channel_epoch`, `producer_sequence`, `kind`, `batch_id`, and `payload`. Instance, epoch and batch IDs are canonical lowercase UUIDs. Payloads are:

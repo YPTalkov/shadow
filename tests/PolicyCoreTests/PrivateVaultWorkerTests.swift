@@ -48,3 +48,25 @@ import PolicyCore
     }
     await restored.lock()
 }
+
+@Test func ownerSnapshotIncludesAllPagesWithoutSecretFields() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-pages-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    let vaultID = "synthetic-pages-\(UUID().uuidString)"
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.yptalkov.shadow.generation-anchor", kSecAttrAccount as String: vaultID] as CFDictionary)
+    }
+    let worker = try await PrivateVaultWorker.launch(python: root.appendingPathComponent(".venv/bin/python"), vaultDirectory: directory.appendingPathComponent("vault"), vaultID: vaultID)
+    try await worker.create(password: "synthetic-pages-master")
+    let csv = directory.appendingPathComponent("synthetic.csv")
+    let rows = (0..<61).map { "Account \($0),https://example.invalid,owner,synthetic-pagination-canary\n" }.joined()
+    try Data(("Title,URL,Username,Password\n" + rows).utf8).write(to: csv)
+    _ = try await worker.previewCSV(path: csv, mapping: OwnerCSVMapping(title: "Title", url: "URL", username: "Username", password: "Password"))
+    _ = try await worker.commitCSV(operationID: UUID(), validRowsOnly: false)
+    let items = try await worker.catalogSnapshot()
+    #expect(items.count == 61 && Set(items.map(\.id)).count == 61)
+    #expect(!String(decoding: try JSONEncoder().encode(items), as: UTF8.self).contains("synthetic-pagination-canary"))
+    await worker.lock()
+}

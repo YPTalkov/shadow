@@ -9,9 +9,9 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U3 | Partial | Native worker/Keychain create/import/reopen/rollback and bounded hostile-file tests pass. Full packaged resource/crash qualification remains. |
 | U4 | Partial | Catalog, references, authority and restriction ledger tested; supervisor integration remains. |
 | U5 | Partial | Descriptor-based CSV preview/commit and native three-account import pass; final manual owner walkthrough remains. |
-| U6 | Partial | Native vault/import/editor/consent/revocation flows pass (28 Swift tests). Actual VM/session integration, scope pagination and accessibility qualification remain. |
-| U7 | In progress | Implement private connector consumer, provenance/conflicts, restriction-ledger integration and conformance. |
-| U8 | Pending | Public protocol and guest CLI/MCP/PTC clients. |
+| U6 | Partial | Native vault/import/editor/consent/revocation/source flows and full catalog scope pass. Actual VM/session integration and accessibility qualification remain. |
+| U7 | Partial | Private consumer, native restriction publication, pinned executable enrollment, Keychain HMAC custody, refresh/removal, conflicts and source/editor conformance implemented. Browser-interruption and packaged qualification remain. |
+| U8 | In progress | Public protocol and guest CLI/MCP/PTC clients. |
 | U9 | Pending | Protected browser and leased egress. |
 | U10 | Pending | Qualified synthetic adapter, safe views and owner challenges. |
 | U11 | Pending | Integrated lifecycle, cancellation and audit. |

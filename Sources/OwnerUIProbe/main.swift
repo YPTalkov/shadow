@@ -40,6 +40,7 @@ Task { @MainActor in
     var model: OwnerVaultModel?
     var config: OwnerConfiguration?
     var succeeded = false
+    var stage = "open"
     do {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
         let configuration = try OwnerConfiguration(root: root, python: source.appendingPathComponent(".venv/bin/python"))
@@ -76,17 +77,33 @@ Task { @MainActor in
         show(OwnerPanel(model: owner, initialDestination: .access), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-consent.jpg"))
+        await owner.inspectSource(source.appendingPathComponent(".build/fixtures/SyntheticSource.app"))
+        guard owner.sourceCandidate != nil else { throw OwnerConfigurationError.unavailable }
+        owner.enrollSource(label: "Synthetic connector")
+        guard let enrolled = owner.sources.first else { throw OwnerConfigurationError.unavailable }
+        await owner.refreshSource(enrolled.id)
+        guard owner.unlocked, owner.accounts.count == 4 else { throw OwnerConfigurationError.unavailable }
+        show(OwnerPanel(model: owner, initialDestination: .sources), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-sources.jpg"))
+        stage = "remove_source"
+        owner.removeSource(enrolled.id)
+        guard owner.sources.isEmpty, owner.accounts.count == 4 else { throw OwnerConfigurationError.unavailable }
+        stage = "begin_editor"
         await owner.beginEditing()
         guard owner.editor != nil, !owner.unlocked, owner.access.grants.isEmpty, owner.access.pending.isEmpty else { throw OwnerConfigurationError.unavailable }
+        stage = "preview_editor"
         await owner.previewEditing(password: "synthetic-ui-master-password")
         guard owner.editorReview?.changed == 0 else { throw OwnerConfigurationError.unavailable }
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-editor-review.jpg"))
+        stage = "apply_editor"
         await owner.applyEditing()
         guard owner.editor == nil, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        stage = "reopen"
         await owner.open(password: "synthetic-ui-master-password", create: false)
-        guard owner.unlocked, owner.accounts.count == 3 else { throw OwnerConfigurationError.unavailable }
+        guard owner.unlocked, owner.accounts.count == 4 else { throw OwnerConfigurationError.unavailable }
         await owner.lock()
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
@@ -94,11 +111,16 @@ Task { @MainActor in
         guard !owner.unlocked, owner.accounts.isEmpty else { throw OwnerConfigurationError.unavailable }
         succeeded = true
     } catch {
-        print("owner_ui_probe_failed")
+        print("owner_ui_probe_failed: " + stage)
     }
     await model?.lock()
     if let config {
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.yptalkov.shadow.generation-anchor", kSecAttrAccount as String: config.vaultID] as CFDictionary)
+        for id in [config.vaultID, config.vaultID + ":restrictions"] {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.yptalkov.shadow.generation-anchor", kSecAttrAccount as String: id] as CFDictionary)
+        }
+        for enrolled in model?.sources ?? [] {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.yptalkov.shadow.source-digest", kSecAttrAccount as String: config.vaultID + ":" + enrolled.id.uuidString.lowercased()] as CFDictionary)
+        }
     }
     try? FileManager.default.removeItem(at: root)
     print(succeeded ? "owner_ui_probe_passed" : "owner_ui_probe_incomplete")

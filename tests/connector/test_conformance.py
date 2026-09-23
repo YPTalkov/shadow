@@ -70,6 +70,17 @@ def test_concurrent_owner_write_is_not_overwritten(source):
     assert store.vault_path.read_bytes() == changed
 
 
+def test_source_vault_roundtrips_unchanged_through_editor(source):
+    store, enrollment, epoch, consumer, _ = source
+    run(consumer, frames(enrollment, epoch, [("group", group()), ("item", item()), ("coverage", coverage())]))
+    editor = EditorHandoff(store)
+    editor.begin(MASTER)
+    preview = editor.preview(MASTER)
+    assert preview["changed"] == 0
+    editor.commit(MASTER, preview["review_id"])
+    assert source_record(store.open(MASTER).entries[0])["instance"] == enrollment.instance
+
+
 def test_duplicate_names_distinct_ids_and_multiple_memberships(source):
     store, enrollment, epoch, consumer, _ = source
     receipt = run(consumer, frames(enrollment, epoch, [("group", group()), ("group", group("group-b")), ("item", item(groups=["group-b", "group-a"])), ("item", item("item-b")), ("coverage", coverage())]))

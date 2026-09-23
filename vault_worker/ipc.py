@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import os
 from pathlib import Path
 import resource
@@ -14,8 +15,11 @@ from .catalog import Catalog
 from .csv_import import CSVImportError, CSVMapping, SelectedCSV
 from .store import VaultStore, VaultStoreError
 from .editor import EditorHandoff
+from .ingest import IngestSession, SourceCapabilities, SourceEnrollment, IngestError
+from .conflicts import resolve as resolve_conflict
+from . import encrypted_metadata
 
-MAX_MESSAGE = 65_536
+MAX_MESSAGE = 2 * 1024 * 1024  # Private host channel; includes a bounded source frame.
 ERROR_CODES = {
     "unsafe_path", "writer_busy", "recovery_required", "already_exists",
     "storage_unavailable", "invalid_credentials", "invalid_vault",
@@ -25,6 +29,11 @@ ERROR_CODES = {
     "invalid_request", "operation_conflict", "vault_unavailable", "vault_locked",
     "unsupported_operation",
     "editor_active", "editor_unavailable", "editor_changed",
+    "invalid_enrollment", "unsupported_version", "identity_mismatch", "sequence_mismatch",
+    "invalid_record", "unsupported_message", "unstable_identity", "unsupported_credential",
+    "contradictory_coverage", "unsupported_evidence", "batch_conflict", "generation_conflict",
+    "ambiguous_identity", "contradictory_evidence", "unknown_group", "history_limit",
+    "invalid_group_hierarchy", "stale_conflict", "unlinked_identity",
 }
 
 
@@ -122,6 +131,32 @@ class NativeAnchor:
             raise ProtocolError
 
 
+class NativeSourceAuthority:
+    def __init__(self, channel: Channel):
+        self.channel = channel
+        self.pending = []
+
+    def _acknowledge(self, kind, payload):
+        self.channel.send(kind, payload)
+        response = self.channel.receive()
+        if response["kind"] != "native.result" or response["payload"] != {"state": "accepted"}:
+            raise ProtocolError
+
+    def invalidate(self, accounts):
+        for offset in range(0, len(accounts), 256):
+            self._acknowledge("mutation.invalidate", {"accounts": accounts[offset:offset + 256]})
+
+    def restrict(self, account, kind, event):
+        self.pending.append({"account": account, "kind": kind, "event_id": event})
+        if len(self.pending) == 256:
+            self.flush()
+
+    def flush(self):
+        if self.pending:
+            self._acknowledge("restriction.record", {"events": self.pending})
+            self.pending = []
+
+
 class Worker:
     def __init__(self, channel: Channel):
         self.channel = channel
@@ -130,6 +165,15 @@ class Worker:
         self.selected: SelectedCSV | None = None
         self.stopping = False
         self.editor: EditorHandoff | None = None
+        self.sources: dict[str, IngestSession] = {}
+        self.source_authority = NativeSourceAuthority(channel)
+        self.catalog_snapshot = None
+
+    def close_sources(self):
+        for source in self.sources.values():
+            source.abort()
+        self.sources.clear()
+        self.source_authority.pending = []
 
     def close_selection(self) -> None:
         if self.selected:
@@ -137,6 +181,8 @@ class Worker:
         self.selected = None
 
     def dispatch(self, kind: str, payload: dict) -> dict:
+        if kind != "owner.catalog":
+            self.catalog_snapshot = None
         if kind == "initialize":
             if self.store is not None or set(payload) != {"vault_directory"}:
                 raise ProtocolError
@@ -155,6 +201,7 @@ class Worker:
         if kind == "editor.preview":
             if set(payload) != {"password"} or not isinstance(payload["password"], str) or not payload["password"]:
                 raise ProtocolError
+            self.close_sources()
             self.close_selection()
             self.password = None
             result = self.editor.preview(payload["password"])
@@ -163,10 +210,12 @@ class Worker:
         if kind == "editor.cancel":
             if set(payload) != {"discard"} or type(payload["discard"]) is not bool:
                 raise ProtocolError
+            self.close_sources()
             self.close_selection()
             self.password = None
             return self.editor.cancel(discard=payload["discard"])
         if kind in ("vault.create", "vault.unlock"):
+            self.close_sources()
             self.close_selection()
             self.password = None
             password = payload.get("password")
@@ -178,6 +227,7 @@ class Worker:
             self.password = password
             return {"state": "unlocked"}
         if kind == "vault.lock":
+            self.close_sources()
             self.close_selection()
             self.password = None
             self.stopping = True
@@ -188,6 +238,7 @@ class Worker:
             if payload:
                 raise ProtocolError
             self.close_selection()
+            self.close_sources()
             result = self.editor.begin(self.password)
             self.password = None
             return result
@@ -197,6 +248,60 @@ class Worker:
             result = self.editor.commit(self.password, payload["review_id"])
             self.password = None
             return result
+        if kind == "source.configure":
+            if set(payload) != {"instance", "label", "epoch", "capabilities", "digest_key"} or len(self.sources) >= 16:
+                raise IngestError("invalid_enrollment")
+            raw = payload["capabilities"]
+            keys = {"stable_items", "stable_groups", "complete_scopes", "deletion_evidence", "distinguishes_access_loss", "totp", "collection_mode", "version"}
+            if not isinstance(raw, dict) or set(raw) != keys or any(type(raw[key]) is not bool for key in ("stable_items", "stable_groups", "distinguishes_access_loss", "totp")):
+                raise IngestError("invalid_enrollment")
+            if type(raw["version"]) is not int or raw["version"] != 1 or raw["collection_mode"] not in {"unattended", "owner_unlock_required", "owner_interaction_required"}:
+                raise IngestError("invalid_enrollment")
+            if not isinstance(raw["complete_scopes"], list) or not set(raw["complete_scopes"]).issubset({"account", "group"}) or not isinstance(raw["deletion_evidence"], list) or not set(raw["deletion_evidence"]).issubset({"item_tombstone", "group_tombstone"}):
+                raise IngestError("invalid_enrollment")
+            if not isinstance(payload["label"], str) or not 0 < len(payload["label"].encode()) <= 256:
+                raise IngestError("invalid_enrollment")
+            raw["complete_scopes"] = frozenset(raw["complete_scopes"])
+            raw["deletion_evidence"] = frozenset(raw["deletion_evidence"])
+            enrollment = SourceEnrollment(payload["instance"], payload["label"], SourceCapabilities(**raw), base64.b64decode(payload["digest_key"], validate=True))
+            self.sources[enrollment.instance] = IngestSession(self.store, self.password, enrollment, payload["epoch"], restrict=self.source_authority.restrict, invalidate=self.source_authority.invalidate, flush_restrictions=self.source_authority.flush)
+            return {"state": "configured"}
+        if kind == "source.frame":
+            if set(payload) != {"instance", "frame"} or payload["instance"] not in self.sources:
+                raise IngestError("invalid_enrollment")
+            try:
+                receipt = self.sources[payload["instance"]].feed(base64.b64decode(payload["frame"], validate=True))
+                if receipt == {"state": "aborted"}:
+                    return {"state": "aborted", "receipt": None}
+                return {"state": "committed" if receipt and "receipt_ref" in receipt else "collecting", "receipt": receipt}
+            finally:
+                self.source_authority.pending = []
+        if kind == "source.close":
+            if set(payload) != {"instance"}:
+                raise ProtocolError
+            source = self.sources.pop(payload["instance"], None)
+            if source:
+                source.abort()
+            return {"state": "closed"}
+        if kind == "source.status":
+            if set(payload) != {"instances"} or not isinstance(payload["instances"], list) or len(payload["instances"]) > 16 or any(not isinstance(value, str) or str(uuid.UUID(value)) != value for value in payload["instances"]):
+                raise ProtocolError
+            vault = self.store.open(self.password)
+            values = vault.tree.find("Meta/CustomData")
+            records = []
+            if values is not None:
+                for item in values.findall("Item"):
+                    key = item.findtext("Key") or ""
+                    if key.startswith("shadow.source."):
+                        record = encrypted_metadata.get(vault.tree.find("Meta"), key)
+                        if record["instance"] in payload["instances"]:
+                            records.append({name: record[name] for name in ("instance", "label", "generation", "last_received")})
+            return {"sources": records}
+        if kind == "source.resolve_conflict":
+            if set(payload) != {"entry_id", "expected_revision", "choice", "operation_id"} or type(payload["expected_revision"]) is not int:
+                raise ProtocolError
+            self.source_authority.invalidate([payload["entry_id"]])
+            return resolve_conflict(self.store, self.password, **payload)
         if kind == "csv.headers":
             if set(payload) != {"path"} or not isinstance(payload["path"], str):
                 raise CSVImportError("invalid_request")
@@ -229,8 +334,9 @@ class Worker:
             offset = payload.get("offset", 0)
             if type(offset) is not int or offset < 0:
                 raise VaultStoreError("invalid_request")
-            catalog = Catalog.from_vault(self.store.open(self.password))
-            return catalog.owner_page(offset)
+            if offset == 0 or self.catalog_snapshot is None:
+                self.catalog_snapshot = Catalog.from_vault(self.store.open(self.password))
+            return self.catalog_snapshot.owner_page(offset)
         raise VaultStoreError("unsupported_operation")
 
 
@@ -244,7 +350,7 @@ def main() -> None:
             request = channel.receive()
             try:
                 result = worker.dispatch(request["kind"], request["payload"])
-            except (VaultStoreError, CSVImportError) as error:
+            except (VaultStoreError, CSVImportError, IngestError) as error:
                 channel.send("error", {"code": error.code if error.code in ERROR_CODES else "worker_unavailable"})
             except ProtocolError:
                 raise
@@ -257,6 +363,7 @@ def main() -> None:
         pass
     finally:
         worker.close_selection()
+        worker.close_sources()
         worker.password = None
 
 

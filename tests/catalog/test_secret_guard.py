@@ -53,3 +53,15 @@ def test_failure_links_find_overlapping_patterns():
     guard = SecretGuard(["bc", "abcd", "xyab"])
     assert guard.project("zabc") == REDACTED
     assert guard.project("safe") == "safe"
+
+
+def test_encrypted_source_metadata_remains_visible_but_incoming_secrets_do_not():
+    vault = load_managed(create_managed("synthetic-master"), "synthetic-master")
+    entry = vault.add_entry(vault.root_group, "Source account", "owner", "current-password-canary")
+    entry.set_custom_property("shadow.baseline.title", "Source account", protect=True)
+    entry.set_custom_property("shadow.baseline.username", "owner", protect=True)
+    entry.set_custom_property("shadow.incoming.password", "incoming-password-canary", protect=True)
+    vault.add_entry(vault.root_group, "incoming-password-canary", "other", "different-password")
+    items = Catalog.from_vault(vault).owner_page(0)["items"]
+    assert any(item["title"] == "Source account" and item["username"] == "owner" for item in items)
+    assert "incoming-password-canary" not in json.dumps(items)

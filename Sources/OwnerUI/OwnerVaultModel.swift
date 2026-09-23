@@ -20,6 +20,11 @@ public final class OwnerVaultModel {
     public var validRowsOnly = false
     public private(set) var editor: OwnerEditorStatus?
     public private(set) var editorReview: OwnerEditorReview?
+    public private(set) var sources: [EnrolledSource] = []
+    public private(set) var sourceSummaries: [OwnerSourceSummary] = []
+    public private(set) var sourceCandidate: SourceCandidate?
+    private var sourceStore: SourceEnrollmentStore?
+    private let sourceRuntime = SourceRuntime()
     private var editorReservation: EditorReservation?
     private var isLocking = false
     private var worker: PrivateVaultWorker?
@@ -27,7 +32,14 @@ public final class OwnerVaultModel {
     private var importOperation = UUID()
     private var lastInteraction = Date()
 
-    public init(configuration: OwnerConfiguration) { self.configuration = configuration }
+    public init(configuration: OwnerConfiguration) {
+        self.configuration = configuration
+        do {
+            let store = try SourceEnrollmentStore(root: configuration.root, vaultID: configuration.vaultID)
+            sourceStore = store
+            sources = store.sources
+        } catch { message = "Connector enrollment is unavailable. Existing encrypted source accounts are preserved." }
+    }
 
     public var vaultExists: Bool {
         FileManager.default.fileExists(atPath: configuration.vaultDirectory.appendingPathComponent("vault.kdbx").path)
@@ -47,15 +59,17 @@ public final class OwnerVaultModel {
         let generation = epoch
         defer { if generation == epoch { busy = false } }
         do {
-            let client = try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID)
+            let client = try await launchWorker()
             guard generation == epoch else { await client.lock(); return }
             worker = client
             if create { try await client.create(password: password) } else { try await client.unlock(password: password) }
-            let page = try await client.catalog()
+            let items = try await client.catalogSnapshot()
+            let summaries = try await client.sources(instances: sources.map(\.id))
             guard generation == epoch else { return }
-            accounts = page.items
-            access.openVault(accounts: Self.consentAccounts(page.items))
-            nextOffset = page.nextOffset
+            accounts = items
+            access.openVault(accounts: Self.consentAccounts(items))
+            nextOffset = nil
+            sourceSummaries = summaries
             unlocked = true
             status = "Unlocked"
             noteInteraction()
@@ -72,6 +86,7 @@ public final class OwnerVaultModel {
         isLocking = true
         defer { isLocking = false; busy = false }
         epoch += 1
+        sourceRuntime.stop()
         access.lock()
         let client = worker
         worker = nil
@@ -84,6 +99,8 @@ public final class OwnerVaultModel {
         selectedCSV = nil
         preview = nil
         editorReview = nil
+        sourceCandidate = nil
+        sourceSummaries = []
         mapping = OwnerCSVMapping(title: "", url: "", username: "", password: "")
         await client?.lock()
         if editor != nil {
@@ -168,7 +185,9 @@ public final class OwnerVaultModel {
     }
 
     private func launchWorker() async throws -> PrivateVaultWorker {
-        try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID)
+        try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID) { [weak access] ids in
+            for id in ids { access?.invalidate(account: id) }
+        }
     }
 
     private func reserveEditor() {
@@ -234,32 +253,119 @@ public final class OwnerVaultModel {
     }
 
     public func commitCSV() async {
-        guard preview != nil else { return }
+        guard preview != nil, !busy else { return }
         access.lock()
         let operation = importOperation, validOnly = validRowsOnly
         await perform { client in
             let result = try await client.commitCSV(operationID: operation, validRowsOnly: validOnly)
-            let page = try await client.catalog()
+            let items = try await client.catalogSnapshot()
             try await client.cancelCSV()
             return {
-                self.accounts = page.items
-                self.access.openVault(accounts: Self.consentAccounts(page.items))
-                self.nextOffset = page.nextOffset
+                self.accounts = items
+                self.access.openVault(accounts: Self.consentAccounts(items))
+                self.nextOffset = nil
                 self.preview = nil
                 self.selectedCSV = nil
                 self.headers = []
                 self.message = "Imported \(result.accepted) accounts. The original CSV is still plaintext; manage its export, download and cloud copies separately."
             }
         }
+        // A recoverable import error must not leave the owner UI open while
+        // authority is closed. Reopening creates a fresh consent scope.
+        if unlocked && !access.unlocked { await lock() }
+    }
+
+    public func inspectSource(_ application: URL) async {
+        guard unlocked, !busy else { return }
+        busy = true
+        let generation = epoch
+        defer { if generation == epoch { busy = false } }
+        do {
+            let candidate = try await Task.detached { try SourceCandidate.inspect(application) }.value
+            guard generation == epoch else { return }
+            sourceCandidate = candidate
+        } catch {
+            guard generation == epoch else { return }
+            message = "Choose a signed connector app with a valid Shadow source manifest. The app has not been enrolled."
+        }
+    }
+
+    public func cancelSourceEnrollment() { sourceCandidate = nil }
+
+    public func enrollSource(label: String) {
+        guard unlocked, !busy, let candidate = sourceCandidate, let store = sourceStore else { return }
+        do {
+            _ = try store.enroll(candidate, label: label)
+            sources = store.sources
+            sourceCandidate = nil
+            message = "Connector enrolled. Refresh is manual; periodic collection is off."
+        } catch { message = "The connector could not be enrolled. Verify its identity and try again." }
+    }
+
+    public func setSourceEnabled(_ id: UUID, _ enabled: Bool) {
+        guard unlocked, !busy, let store = sourceStore else { return }
+        do { try store.setEnabled(id, enabled); sources = store.sources }
+        catch { message = "The connector setting could not be saved." }
+    }
+
+    public func removeSource(_ id: UUID) {
+        guard unlocked, !busy, let store = sourceStore else { return }
+        do {
+            try store.remove(id); sources = store.sources
+            message = "Connector removed. Its encrypted accounts and source history are preserved."
+        } catch { message = "The connector could not be removed." }
+    }
+
+    public func refreshSource(_ id: UUID) async {
+        guard unlocked, !busy, let source = sources.first(where: { $0.id == id }), let store = sourceStore else { return }
+        access.lock()
+        await perform { client in
+            let result = try await self.sourceRuntime.refresh(source, store: store, worker: client)
+            let items = try await client.catalogSnapshot()
+            let summaries = try await client.sources(instances: self.sources.map(\.id))
+            return {
+                self.accounts = items; self.nextOffset = nil
+                self.access.openVault(accounts: Self.consentAccounts(items))
+                self.sourceSummaries = summaries
+                switch result.state {
+                case "committed": self.message = "Source updated: \(result.receipt?.accepted ?? 0) accepted, \(result.receipt?.conflicted ?? 0) conflicts, \(result.receipt?.retained ?? 0) retained."
+                case "needs_owner_action": self.message = "The connector needs your attention. Open its app to sign in or unlock the source, then refresh again."
+                case "aborted": self.message = "The connector cancelled its update. Existing accounts are preserved."
+                default: self.message = "This connector cannot refresh its configured source."
+                }
+            }
+        }
+        if unlocked && !access.unlocked { await lock() }
+    }
+
+    public func resolveSourceConflict(_ item: OwnerCatalogItem, choice: String) async {
+        guard unlocked, !busy, let entry = UUID(uuidString: item.id), item.conflicted else { return }
+        access.lock()
+        await perform { client in
+            _ = try await client.resolveConflict(entry: entry, revision: item.revision, choice: choice, operationID: UUID())
+            let items = try await client.catalogSnapshot()
+            return {
+                self.accounts = items; self.nextOffset = nil
+                // A resolution can archive an unlinked candidate. Reset the
+                // consent scope so removed entries cannot remain discoverable.
+                self.access.openVault(accounts: Self.consentAccounts(items))
+                self.message = "Conflict resolved. Request fresh access before using the account."
+            }
+        }
+        if unlocked && !access.unlocked { await lock() }
     }
 
     private static func consentAccounts(_ items: [OwnerCatalogItem]) -> [ConsentAccount] {
         items.compactMap { item in
             guard let id = UUID(uuidString: item.id) else { return nil }
-            // Mirrored entries remain unusable until the native restriction
-            // ledger supplies their observation/removal history (U7).
             let local = item.sourceKind == "local"
-            let policy = AccountPolicy(id: id, revision: item.revision, source: local ? .local : .mirrored, presence: local ? .present : .unknown, lastObserved: nil, restrictionEvent: nil)
+            let presence: SourcePresence = switch item.presence {
+            case "present": .present
+            case "deleted_at_source": .deletedAtSource
+            case "access_lost": .accessLost
+            default: .unknown
+            }
+            let policy = AccountPolicy(id: id, revision: item.revision, source: local ? .local : .mirrored, presence: presence, lastObserved: item.observationDate, restrictionEvent: item.restrictionEvent.flatMap(UUID.init(uuidString:)), conflicted: item.conflicted)
             return ConsentAccount(metadata: item, policy: policy)
         }
     }

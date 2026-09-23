@@ -98,6 +98,11 @@ class SecretGuard:
             key = parent.findtext("Key") if parent.tag == "String" else None
             if key and key.startswith("shadow.") and not key.startswith(("shadow.baseline.", "shadow.incoming.")):
                 continue
+            # Mirrored metadata is encrypted with its baseline for reconciliation;
+            # that does not turn a public title into a password. Password, notes
+            # and TOTP baseline/incoming values still guard every projection.
+            if key and key.startswith(("shadow.baseline.", "shadow.incoming.")) and key.rsplit(".", 1)[-1] in {"title", "username", "urls", "group"}:
+                continue
             if key in {"Title", "UserName", "URL"} and value.get("Protected") != "True":
                 continue
             yield value.text

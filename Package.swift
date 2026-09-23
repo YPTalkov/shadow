@@ -14,6 +14,7 @@ let package = Package(
         .executable(name: "vm-boot-probe", targets: ["VMBootProbe"]),
         .executable(name: "Shadow", targets: ["OwnerApp"]),
         .executable(name: "owner-ui-probe", targets: ["OwnerUIProbe"]),
+        .executable(name: "source-fixture", targets: ["SourceFixture"]),
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
@@ -26,6 +27,7 @@ let package = Package(
         .target(name: "OwnerUI", dependencies: ["BrokerHost", "PolicyCore"]),
         .executableTarget(name: "OwnerApp", dependencies: ["OwnerUI"]),
         .executableTarget(name: "OwnerUIProbe", dependencies: ["OwnerUI"]),
+        .executableTarget(name: "SourceFixture", dependencies: ["RuntimeHost"]),
         .testTarget(name: "PolicyCoreTests", dependencies: ["PolicyCore", "RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost", "OwnerUI"], path: "tests/PolicyCoreTests"),
     ]
 )
