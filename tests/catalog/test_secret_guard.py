@@ -43,7 +43,7 @@ def test_csv_preview_withholds_a_secret_repeated_in_another_rows_metadata(tmp_pa
 
 
 def test_guard_budget_overflow_suppresses_metadata(monkeypatch):
-    monkeypatch.setattr("vault_worker.secret_guard.MAX_STATES", 16)
+    monkeypatch.setattr("shadow_common.secret_guard.MAX_STATES", 16)
     guard = SecretGuard(["large-synthetic-canary"])
     assert guard.suppress_all and guard.project("ordinary metadata") == REDACTED
     assert guard.project("") == ""

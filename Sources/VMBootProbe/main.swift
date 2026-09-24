@@ -56,12 +56,27 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
                 } else if channel == .browserEgress {
                     guard Set(message.keys) == ["host", "port"], let host = message["host"] as? String,
                           let port = message["port"] as? Int, port == 443 else { throw FrameError.invalidFrame }
+                    let descriptor = connection.fileDescriptor
+                    if let configured = ProcessInfo.processInfo.environment["SHADOW_FIXTURE_PORT"], let fixturePort = UInt16(configured) {
+                        guard host == "app.shadow.test", fixturePort >= 1024 else { throw FrameError.invalidFrame }
+                        Task { @MainActor in
+                            _ = await Task.detached { try? FixtureTunnel.run(guest: descriptor, port: fixturePort, transport: transport) }.value
+                            self?.channels?.close(connection)
+                        }
+                        return
+                    }
                     let destination = try HTTPSDestination(host: host, port: 443)
                     let instance = identity.instance.uuidString, boot = identity.boot.uuidString
                     let lease = EgressLease(instance: instance, boot: boot, session: "synthetic-session", destinations: [try HTTPSDestination(host: "example.com", port: 443)], expiresAt: DeadlineClock.now + 10)
-                    try Gateway.tunnel(guest: connection.fileDescriptor, destination: destination, lease: lease, instance: instance, boot: boot, session: "synthetic-session") {
-                        try transport.write(JSONSerialization.data(withJSONObject: ["kind": "connected"]))
+                    Task { @MainActor in
+                        _ = await Task.detached {
+                            try? Gateway.tunnel(guest: descriptor, destination: destination, lease: lease, instance: instance, boot: boot, session: "synthetic-session") {
+                                try transport.write(JSONSerialization.data(withJSONObject: ["kind": "connected"]))
+                            }
+                        }.value
+                        self?.channels?.close(connection)
                     }
+                    return
                 } else { throw FrameError.invalidFrame }
             } catch let error as RelayError {
                 print("relay_probe_\(error.rawValue)")

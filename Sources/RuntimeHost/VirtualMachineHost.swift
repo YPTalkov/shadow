@@ -52,6 +52,8 @@ public enum RuntimeVMConfiguration {
             let graphics = VZVirtioGraphicsDeviceConfiguration()
             graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1280, heightInPixels: 800)]
             configuration.graphicsDevices = [graphics]
+            configuration.keyboards = [VZUSBKeyboardConfiguration()]
+            configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
         } else {
             configuration.graphicsDevices = []
         }

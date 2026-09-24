@@ -102,7 +102,7 @@ public enum Gateway {
         throw EgressError.unavailable
     }
 
-    static func forward(guest: Int32, host: Int32, authorize: () throws -> Void) throws {
+    package static func forward(guest: Int32, host: Int32, authorize: () throws -> Void) throws {
         try nonblocking(guest)
         try nonblocking(host)
         var toGuest = Data()

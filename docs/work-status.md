@@ -12,7 +12,7 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U6 | Partial | Native vault/import/editor/consent/revocation/source flows and full catalog scope pass. Actual VM/session integration and accessibility qualification remain. |
 | U7 | Partial | Private consumer, native restriction publication, pinned executable enrollment, Keychain HMAC custody, refresh/removal, conflicts and source/editor conformance implemented. Browser-interruption and packaged qualification remain. |
 | U8 | Partial | Shared request/result contracts, native API, CLI/MCP/PTC parity (29 tests), native authority tests and actual Linux Codex MCP pass. Protected jobs and production VM enrollment remain. |
-| U9 | In progress | Protected browser runtime and atomic authentication; leased egress component already tested. |
+| U9 | In progress | Sandboxed headed Chromium in the no-NIC VM; ten atomic-auth scenarios, real certificate-validated HTTPS login/redirect, revoked proxy tunnels and forced-crash dump suppression pass. Native credential delivery, serialized session service and renewable host leases remain. |
 | U10 | Pending | Qualified synthetic adapter, safe views and owner challenges. |
 | U11 | Pending | Integrated lifecycle, cancellation and audit. |
 | U12 | Pending | Backup/restore and recovery UI. |

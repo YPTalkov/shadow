@@ -26,6 +26,9 @@ import Testing
         #expect(config.storageDevices.count == 1)
         #expect(config.memorySize == 4 * 1024 * 1024 * 1024)
         #expect(config.cpuCount == 2)
+        #expect(config.graphicsDevices.count == (role == .browser ? 1 : 0))
+        #expect(config.keyboards.count == (role == .browser ? 1 : 0))
+        #expect(config.pointingDevices.count == (role == .browser ? 1 : 0))
     }
     try Data(repeating: 1, count: 4096).write(to: root.appendingPathComponent("synthetic-image"))
     #expect(throws: VMConfigurationError.imageMismatch) {
