@@ -4,6 +4,7 @@ import PolicyCore
 import RuntimeHost
 import ModelRelay
 import Security
+import OwnerUI
 
 /// Synthetic owner and provider around the production agent/browser drivers.
 @MainActor enum TwoVMProbe {
@@ -13,7 +14,17 @@ import Security
         let args = CommandLine.arguments, root = URL(fileURLWithPath: rootPath)
         let removeSource = ProcessInfo.processInfo.environment["SHADOW_PROBE_INTERRUPT"] == "source"
         let browserImage = BrowserVMImage(kernel: URL(fileURLWithPath: args[2]), ramdisk: URL(fileURLWithPath: args[3]), disk: URL(fileURLWithPath: args[4]), identity: VMImageIdentity(kernelSHA256: args[5], ramdiskSHA256: args[6], imageSHA256: args[7]))
-        let agentImage = try AgentVMImage.packaged(at: root.appendingPathComponent(".build/guest-cache/agent"))
+        let python: URL, agentDirectory: URL
+        if let path = ProcessInfo.processInfo.environment["SHADOW_QUALIFY_APP"] {
+            guard let bundle = Bundle(path: path), let resources = bundle.resourceURL else { throw AgentAPIError.unavailable }
+            try InstalledResources.verify(bundle: bundle)
+            python = resources.appendingPathComponent("python/bin/python3")
+            agentDirectory = resources.appendingPathComponent("agent")
+        } else {
+            python = root.appendingPathComponent(".venv/bin/python")
+            agentDirectory = root.appendingPathComponent(".build/guest-cache/agent")
+        }
+        let agentImage = try AgentVMImage.packaged(at: agentDirectory)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-two-vm-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         let vaultID = "synthetic-two-vm-\(UUID())"
@@ -25,7 +36,7 @@ import Security
         }
         let access = AccessCoordinator(), api: AgentAPI
         api = AgentAPI(access: access)
-        let worker = try await PrivateVaultWorker.launch(python: root.appendingPathComponent(".venv/bin/python"), vaultDirectory: directory.appendingPathComponent("vault"), vaultID: vaultID) { ids in
+        let worker = try await PrivateVaultWorker.launch(python: python, vaultDirectory: directory.appendingPathComponent("vault"), vaultID: vaultID) { ids in
             ids.forEach { access.invalidate(account: $0) }
         }
         let source = UUID(), sourceEpoch = UUID()

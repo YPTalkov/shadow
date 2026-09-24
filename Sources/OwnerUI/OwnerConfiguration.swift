@@ -69,6 +69,7 @@ public final class OwnerConfiguration {
         let browserImage = try? BrowserVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/browser"))
         let agentImage = try? AgentVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/agent"))
         #else
+        try InstalledResources.verify()
         guard let resources = Bundle.main.resourceURL else { throw OwnerConfigurationError.unavailable }
         let python = resources.appendingPathComponent("python/bin/python3")
         let browserImage = try BrowserVMImage.packaged(at: resources.appendingPathComponent("browser"))

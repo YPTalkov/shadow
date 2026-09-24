@@ -11,6 +11,10 @@ struct ShadowApp: App {
     private let startupMessage: String?
 
     init() {
+        if CommandLine.arguments == [CommandLine.arguments[0], "--verify-installation"] {
+            do { try InstalledResources.verify(); print("SHADOW_INSTALLATION=pass"); exit(0) }
+            catch { print("SHADOW_INSTALLATION=failed"); exit(1) }
+        }
         do {
             var coreLimit = rlimit(rlim_cur: 0, rlim_max: 0)
             guard setrlimit(RLIMIT_CORE, &coreLimit) == 0 else { throw OwnerConfigurationError.unavailable }

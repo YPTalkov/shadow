@@ -26,6 +26,18 @@ func show(_ panel: OwnerPanel, in window: NSWindow) {
     window.setContentSize(NSSize(width: 1080, height: 820))
 }
 
+func scanSyntheticArtifacts(_ root: URL) throws {
+    guard let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { throw OwnerConfigurationError.unavailable }
+    let canaries = ["synthetic-ui-master-password", "synthetic-one", "synthetic-two", "synthetic-three"]
+    for case let file as URL in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+        let bytes = try Data(contentsOf: file)
+        for canary in canaries {
+            guard bytes.range(of: Data(canary.utf8)) == nil,
+                  bytes.range(of: Data(Data(canary.utf8).base64EncodedString().utf8)) == nil else { throw OwnerConfigurationError.unavailable }
+        }
+    }
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -44,7 +56,17 @@ Task { @MainActor in
     var stage = "open"
     do {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
-        let configuration = try OwnerConfiguration(root: root, python: source.appendingPathComponent(".venv/bin/python"), agentImage: AgentVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/agent")))
+        let python: URL, agentDirectory: URL
+        if let path = ProcessInfo.processInfo.environment["SHADOW_QUALIFY_APP"] {
+            guard let bundle = Bundle(path: path), let resources = bundle.resourceURL else { throw OwnerConfigurationError.unavailable }
+            try InstalledResources.verify(bundle: bundle)
+            python = resources.appendingPathComponent("python/bin/python3")
+            agentDirectory = resources.appendingPathComponent("agent")
+        } else {
+            python = source.appendingPathComponent(".venv/bin/python")
+            agentDirectory = source.appendingPathComponent(".build/guest-cache/agent")
+        }
+        let configuration = try OwnerConfiguration(root: root, python: python, agentImage: AgentVMImage.packaged(at: agentDirectory))
         config = configuration
         let owner = OwnerVaultModel(configuration: configuration)
         model = owner
@@ -63,6 +85,7 @@ Task { @MainActor in
         try snapshot(window, to: evidence.appendingPathComponent("owner-import.jpg"))
         await owner.commitCSV()
         guard owner.accounts.count == 3 else { throw OwnerConfigurationError.unavailable }
+        try FileManager.default.removeItem(at: csv)
         owner.message = nil
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))
@@ -193,6 +216,9 @@ Task { @MainActor in
         show(OwnerPanel(model: owner, initialDestination: .recovery), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-diagnostics.jpg"))
+        await owner.lock()
+        try scanSyntheticArtifacts(root)
+        print("OWNER_PERSISTENT_CANARIES=absent")
         succeeded = true
     } catch {
         print("owner_ui_probe_failed: " + stage)

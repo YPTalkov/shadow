@@ -148,7 +148,7 @@ public actor PrivateVaultWorker {
         let child = FileHandle(fileDescriptor: pair[1], closeOnDealloc: false)
         process = Process()
         process.executableURL = python
-        process.arguments = ["-I", "-m", "vault_worker.ipc"]
+        process.arguments = ["-I", "-B", "-m", "vault_worker.ipc"]
         process.environment = ["PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"]
         process.standardInput = child
         process.standardOutput = child

@@ -28,6 +28,7 @@ import PolicyCore
             runtime.stop(); throw AgentAPIError.unavailable
         }
         print("AGENT_CODEX_SHELL_MCP=pass")
+        print("AGENT_ROOT_BOUNDARY=pass")
         print("AGENT_TASK_TEARDOWN=pass")
         await fixture.holdNextTask()
         await runtime.start(prompt: "Check status", model: model)
@@ -85,7 +86,8 @@ private actor AgentProbeModel {
             let names = tools.compactMap { $0["name"] as? String }
             if let functions = tools.first(where: { $0["name"] as? String == "functions" }),
                (functions["tools"] as? [[String: Any]] ?? []).contains(where: { $0["name"] as? String == "exec" && $0["type"] as? String == "custom" }) {
-                let code = "text(await tools.exec_command({cmd: 'printf shadow-tool-ok'})); text(await tools.mcp__shadow__shadow_vault_status({request_id: '\(UUID().uuidString.lowercased())', arguments: {}}));"
+                let command = try JSONSerialization.data(withJSONObject: ["cmd": Self.boundaryCommand], options: [.sortedKeys])
+                let code = "const result = await tools.exec_command(\(String(decoding: command, as: UTF8.self))); if (result.exit_code !== 0 || result.output.trim() !== 'shadow-tool-ok') throw new Error('boundary_failed'); text('shadow-tool-ok'); text(await tools.mcp__shadow__shadow_vault_status({request_id: '\(UUID().uuidString.lowercased())', arguments: {}}));"
                 item = ["type": "custom_tool_call", "id": "ctc_synthetic", "call_id": "call_code", "name": "exec", "namespace": "functions", "input": code, "status": "completed"]
             } else {
                 let name = hasResult ? "shadow_vault_status" : names.contains("exec_command") ? "exec_command" : "shell_command"
@@ -94,7 +96,7 @@ private actor AgentProbeModel {
                     guard (namespace?["tools"] as? [[String: Any]] ?? []).contains(where: { $0["name"] as? String == name }) else { throw AgentAPIError.unavailable }
                 } else { guard names.contains(name) else { throw AgentAPIError.unavailable } }
                 let arguments: [String: Any] = hasResult ? ["request_id": UUID().uuidString.lowercased(), "arguments": [String: String]()]
-                    : name == "exec_command" ? ["cmd": "printf shadow-tool-ok"] : ["command": "printf shadow-tool-ok"]
+                    : name == "exec_command" ? ["cmd": Self.boundaryCommand] : ["command": Self.boundaryCommand]
                 var call: [String: Any] = ["type": "function_call", "id": hasResult ? "fc_mcp" : "fc_synthetic", "call_id": hasResult ? "call_mcp" : "call_synthetic", "name": name,
                                           "arguments": String(decoding: try JSONSerialization.data(withJSONObject: arguments), as: UTF8.self), "status": "completed"]
                 if hasResult { call["namespace"] = "mcp__shadow" }
@@ -113,4 +115,40 @@ private actor AgentProbeModel {
             try await send(Data("event: \(event["type"]!)\ndata: \(String(decoding: encoded, as: UTF8.self))\n\n".utf8))
         }
     }
+
+    private static let boundaryCommand = """
+    python3 - <<'PY'
+    import os, socket
+    from pathlib import Path
+    assert os.getuid() == 0
+    assert sorted(os.listdir('/sys/class/net')) == ['lo']
+    assert len(Path('/proc/swaps').read_text().splitlines()) == 1
+    assert len(Path('/proc/net/route').read_text().splitlines()) == 1
+    assert not Path('/Users').exists()
+    assert not any(kind in Path('/proc/mounts').read_text() for kind in ['virtiofs', '9p'])
+    try:
+        import vault_worker
+        raise AssertionError('storage_import_available')
+    except ModuleNotFoundError:
+        pass
+    for port in [4052,4053,22,80,443]:
+        with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as channel:
+            channel.settimeout(0.25)
+            assert channel.connect_ex((socket.VMADDR_CID_HOST,port)) != 0
+    for host in ['1.1.1.1','10.0.0.1','169.254.169.254']:
+        with socket.socket() as channel:
+            channel.settimeout(0.25)
+            assert channel.connect_ex((host,443)) != 0
+    try:
+        descriptor = os.open('/dev/vda',os.O_WRONLY)
+        try:
+            os.pwrite(descriptor,b'x',0)
+            raise AssertionError('writable_disk')
+        finally:
+            os.close(descriptor)
+    except OSError:
+        pass
+    print('shadow-tool-ok')
+    PY
+    """
 }

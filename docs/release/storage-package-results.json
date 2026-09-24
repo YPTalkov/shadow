@@ -1,0 +1,21 @@
+{
+  "time_utc": "2026-09-24T05:14:24.666287+00:00",
+  "python": "3.12.13",
+  "macos": "26.6.2",
+  "hardware": "Mac17,9",
+  "timings": {
+    "create_seconds": 0.29133754095528275,
+    "import_5000_seconds": 1.0488877081079409,
+    "unlock_seconds": 0.2454819589620456,
+    "catalog_10000_p95_ms": 3.4263374924194068
+  },
+  "checks": {
+    "import_5000": true,
+    "all_secret_classes_withheld": true,
+    "keepassxc_independent_read": true,
+    "persistent_canaries_absent": true,
+    "import_budget": true,
+    "search_budget": true
+  },
+  "passed": true
+}

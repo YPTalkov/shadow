@@ -1,0 +1,40 @@
+{
+  "macos": "26.6.2",
+  "architecture": "arm64",
+  "swift": "6.3.3",
+  "python": "3.12.13",
+  "pykeepass": "4.2.0",
+  "keepassxc": "2.7.12",
+  "codex": "0.156.1",
+  "playwright": "1.63.0",
+  "kdbx": {
+    "version": "4.0",
+    "cipher": "AES-256",
+    "kdf": "Argon2id",
+    "memory_mib": 128,
+    "iterations": 3,
+    "lanes": 2
+  },
+  "agent": {
+    "profile": "agent",
+    "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
+    "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "981488940f704e0bc6e53de60e9c32d4d020d24fbf86bdea2ccafc22fb4d95fb",
+      "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    }
+  },
+  "browser": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "runtime",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "c37bf61b5ccb15e7945537d251d6e04f155e8d2a7a6b40bc3b051a2901209711",
+      "disk": "c0708153801e8d8dd127668e9fa9e17ea86cc605c9ecc13ede0e2b55f4d124ec"
+    }
+  },
+  "dependency_inventory": "Shadow.app/Contents/Resources/dependencies.json",
+  "production_approved": false
+}

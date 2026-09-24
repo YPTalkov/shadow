@@ -20,16 +20,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--session", action="store_true")
     parser.add_argument("--agent", action="store_true")
+    parser.add_argument("--app", type=Path, help="qualify this sealed bundle's worker and agent image")
+    parser.add_argument("--binary", type=Path, default=ROOT / ".build/arm64-apple-macosx/debug/vm-boot-probe")
     parser.add_argument("--interrupt", choices=("revoke", "suspend", "worker", "source"))
     parser.add_argument("--flow", choices=("totp", "owner", "sso", "unsupported", "owner_cancel", "owner_timeout"))
     arguments = parser.parse_args()
+    if arguments.app and not arguments.agent:
+        parser.error("--app currently requires --agent")
     if arguments.agent and (arguments.interrupt not in (None, "source") or arguments.flow):
         parser.error("--agent supports the basic task and source removal")
     if arguments.interrupt == "source" and not arguments.agent:
         parser.error("source removal requires --agent")
     session = arguments.agent or arguments.session or arguments.interrupt is not None or arguments.flow is not None
     manifest = json.loads((IMAGE / ("qualification-manifest.json" if session else "runtime-manifest.json")).read_text())
-    executable = ROOT / ".build/arm64-apple-macosx/debug/vm-boot-probe"
+    executable = arguments.binary.resolve()
     command = [str(executable), "two-vm" if arguments.agent else "browser-session" if session else "browser"]
     command += [str(IMAGE / name) for name in ("kernel", "initrd-qualification" if session else "initrd", "disk")]
     command += [manifest["files"][name] for name in ("kernel", "initrd", "disk")]
@@ -46,6 +50,10 @@ def main():
         console_path = IMAGE / ("session-console.txt" if session else "console.txt")
         with console_path.open("wb") as console:
             environment = {**os.environ, "SHADOW_FIXTURE_PORT": str(fixture.server_port), "SHADOW_PROBE_ROOT": str(ROOT), "SHADOW_PROBE_INTERRUPT": arguments.interrupt or "", "SHADOW_PROBE_FLOW": arguments.flow or ""}
+            if arguments.app:
+                environment["SHADOW_QUALIFY_APP"] = str(arguments.app.resolve())
+            else:
+                environment.pop("SHADOW_QUALIFY_APP", None)
             with subprocess.Popen(command, stdout=console, stderr=subprocess.DEVNULL, env=environment) as run:
                 try:
                     if arguments.interrupt in {"revoke", "suspend"}:
@@ -96,16 +104,21 @@ def main():
     leaked = any(value in output for value in ("synthetic-atomic-auth-canary", "synthetic-http-only-canary", "synthetic-browser-bootstrap-canary", "synthetic-view/password&canary", "synthetic-view-cookie-canary"))
     lines["BROWSER_CONSOLE_CANARIES"] = "absent" if not leaked else "fail"
     passed = passed and not leaked
+    with executable.open("rb") as file:
+        executable_hash = hashlib.file_digest(file, "sha256").hexdigest()
     report = {
         "passed": passed, "exit_code": run.returncode, "manifest": manifest, "checks": lines,
         "tested_at": datetime.now(timezone.utc).isoformat(),
         "host": {"macos": platform.mac_ver()[0], "architecture": platform.machine()},
-        "executable_sha256": hashlib.file_digest(executable.open("rb"), "sha256").hexdigest(),
+        "executable_sha256": executable_hash,
     }
     filename = "session-results.json" if session else "results.json"
     if arguments.agent:
         filename = "two-vm-results.json"
-        report["agent_manifest"] = json.loads((ROOT / ".build/guest-cache/agent/manifest.json").read_text())
+        agent_manifest = arguments.app / "Contents/Resources/agent/manifest.json" if arguments.app else ROOT / ".build/guest-cache/agent/manifest.json"
+        report["agent_manifest"] = json.loads(agent_manifest.read_text())
+        if arguments.app:
+            report["package_inventory_sha256"] = hashlib.sha256((arguments.app / "Contents/Resources/installation.json").read_bytes()).hexdigest()
         passed = passed and lines.get("TWO_VM_MODEL_CANARIES") == "absent"
         report["passed"] = passed
     if arguments.interrupt:

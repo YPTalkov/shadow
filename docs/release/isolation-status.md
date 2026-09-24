@@ -1,5 +1,7 @@
 # Runtime isolation status
 
+This is the original U2 qualification record. See [package qualification](package-status.md) for the current production images and integrated runtime results.
+
 The native configuration code builds separate agent and browser VM profiles. Both have zero virtual network devices, zero host directory shares, one virtio socket device, and one read-only disk device. Only the browser role has a graphics scanout. The three image inputs are SHA-256 checked before configuration. Synthetic tests reject an image changed after its expected hash was recorded.
 
 The `vm-config-probe` developer executable was ad-hoc signed with `packaging/virtualization.entitlements` on the Apple Silicon target Mac. On 2026-09-23, `VZVirtualMachineConfiguration.validate()` returned `configuration_valid` for both device profiles using zero-filled synthetic kernel, ramdisk, and image files. This establishes entitlement/configuration availability, **not a Linux boot or isolation boundary**. The [Apple Virtualization configuration documentation](https://developer.apple.com/documentation/virtualization/vzvirtualmachineconfiguration) requires the virtualization entitlement and describes its separate network, socket, and directory-sharing device lists.
@@ -14,4 +16,4 @@ The actual Linux Codex client completed a synthetic streamed shell tool call and
 
 Reproduction is documented in [the image instructions](../../images/README.md). Exact image hashes and bounded outcomes are in [the probe record](vm-probe-results.json). The image is a developer fixture; it is not the production browser/agent image. Initial failures also caught the EFI kernel wrapper, missing initramfs applet links, and the distinction between opening a block device and actually writing it.
 
-The [HTTPS gateway component](egress-status.md) now passes native scope/revocation/idle-expiry tests and a certificate-verified request from the actual browser VM. The latest native suite has 19 passing tests. U2 remains open for browser-specific bypass and controlled rebinding tests, watchdog/crash controls, concurrent-VM attacks, live provider authentication, production image hardening and packaged qualification. No vault secret is connected to a browser. An unrestricted same-user agent remains outside the supported deployment.
+The [HTTPS gateway component](egress-status.md) passed native scope/revocation/idle-expiry tests and a certificate-verified request from the actual browser VM. That milestone had 19 passing native tests and did not connect a vault secret to a browser. Later protected-session, watchdog, production-image and packaged results are linked from the current package record. An unrestricted same-user agent remains outside the supported deployment.

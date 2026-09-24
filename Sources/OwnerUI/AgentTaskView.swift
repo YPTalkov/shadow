@@ -37,6 +37,8 @@ struct AgentTaskView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Describe the task without passwords or sign-in codes. Codex runs for up to 15 minutes. Account discovery and credential use need your separate approval below.")
                 .font(.callout).foregroundStyle(.secondary)
+            Text("Website support: synthetic qualification sites only. Real-site access needs a reviewed site adapter.")
+                .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $prompt).font(.body).frame(minHeight: 60, maxHeight: 90)
                 .border(.quaternary).accessibilityLabel("Task for isolated Codex")
                 .disabled(runtime.active)

@@ -161,7 +161,13 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
 }
 
 let probe = Probe()
-if CommandLine.arguments.dropFirst().first == "two-vm" {
+let productionBrowserProbe = ProductionBrowserProbe()
+if CommandLine.arguments.dropFirst().first == "browser-runtime" {
+    Task { @MainActor in
+        do { try await productionBrowserProbe.run(); print("PRODUCTION_BROWSER=pass"); exit(0) }
+        catch { print("PRODUCTION_BROWSER=failed"); exit(1) }
+    }
+} else if CommandLine.arguments.dropFirst().first == "two-vm" {
     Task { @MainActor in
         do { try await TwoVMProbe.run(); print("TWO_VM_RESULT=pass"); exit(0) }
         catch { print("TWO_VM_RESULT=failed"); exit(1) }
