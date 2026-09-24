@@ -61,7 +61,12 @@ public struct OwnerPanel: View {
                     switch destination ?? .vault {
                     case .vault: vault
                     case .importCSV: importView
-                    case .access: AgentAccessView(access: model.access)
+                    case .access:
+                        VStack(spacing: 0) {
+                            ModelSignInView(owner: model)
+                            Divider()
+                            AgentAccessView(access: model.access)
+                        }
                     case .sources: SourcesView(model: model)
                     case .recovery: RecoveryView(model: model)
                     }

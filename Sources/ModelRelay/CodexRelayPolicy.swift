@@ -9,10 +9,12 @@ public enum RelayError: String, Error, Sendable {
     case providerUnavailable = "model_provider_unavailable"
 }
 
-public struct CodexCredential: Sendable {
+public struct CodexCredential: Sendable, CustomStringConvertible, CustomReflectable {
     let accessToken: String
     let accountID: String
     let expiresAt: Date
+    public var description: String { "CodexCredential(redacted)" }
+    public var customMirror: Mirror { Mirror(self, children: [:]) }
 
     public init(accessToken: String, accountID: String, expiresAt: Date) {
         self.accessToken = accessToken

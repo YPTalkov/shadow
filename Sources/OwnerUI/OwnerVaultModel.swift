@@ -2,12 +2,14 @@ import Foundation
 import Observation
 import BrokerHost
 import PolicyCore
+import ModelRelay
 
 @Observable @MainActor
 public final class OwnerVaultModel {
     public let configuration: OwnerConfiguration
     public let access = AccessCoordinator()
     public let agentAPI: AgentAPI
+    public let modelSignIn: ModelSignInModel
     public private(set) var protectedSessions: ProtectedSessionService?
     private var operationJournal: OperationJournal?
     public private(set) var diagnostics: DiagnosticReport?
@@ -44,6 +46,7 @@ public final class OwnerVaultModel {
 
     public init(configuration: OwnerConfiguration, clock: @escaping () -> TimeInterval = { DeadlineClock.now }) {
         self.configuration = configuration
+        modelSignIn = ModelSignInModel(authentication: CodexAuthentication(vaultID: configuration.vaultID))
         self.clock = clock
         lastInteraction = clock()
         lastMaintenance = clock()
@@ -131,6 +134,11 @@ public final class OwnerVaultModel {
 
     public func finishLock() async { await lockTask?.value }
 
+    public func signOutModel() {
+        lockImmediately()
+        Task { await modelSignIn.signOut() }
+    }
+
     /// Revoke on the event's current MainActor turn, before scheduling teardown.
     public func lockImmediately(reason: OwnerLockReason = .owner) {
         // A repeated lock also cancels operations waiting for prior cleanup.
@@ -138,6 +146,7 @@ public final class OwnerVaultModel {
         isLocking = true
         epoch += 1
         sourceRuntime.stop()
+        modelSignIn.cancelImmediately()
         protectedSessions?.shutdown()
         protectedSessions = nil
         agentAPI.protectedService = nil
