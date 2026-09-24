@@ -132,7 +132,9 @@ class LayerSet(AbstractContextManager):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-only", action="store_true")
-    runtime_only = parser.parse_args().runtime_only
+    parser.add_argument("--profile", choices=("probe", "runtime", "qualification"), default="probe")
+    arguments = parser.parse_args()
+    runtime_only = arguments.runtime_only
     lock = json.loads((ROOT / "images/browser-image.lock.json").read_text())
     for artifact in ([] if runtime_only else lock["artifacts"]):
         with (CACHE / artifact["filename"]).open("rb") as source:
@@ -196,14 +198,22 @@ def main() -> None:
         ramdisk = archive.extractfile("boot/initramfs-virt").read()
     modules = CACHE / "modules-root"
     subprocess.run(["unsquashfs", "-f", "-d", str(modules), str(ROOT / ".build/guest-cache/modloop-virt")], check=True, stdout=subprocess.DEVNULL)
-    overlay = bytearray(cpio_file("init", (ROOT / "images/browser-init.sh").read_bytes(), stat.S_IFREG | 0o755))
-    payload = {"shadow/browser_probe.py": (ROOT / "images/browser-probe.py").read_bytes(),
-               "shadow/boot_probe.py": (ROOT / "images/browser-boot-probe.py").read_bytes(),
-               "shadow/browser_scenarios.py": (ROOT / "tests/browser/guest_scenarios.py").read_bytes(),
-               "shadow/xorg.conf": (ROOT / "images/xorg.conf").read_bytes(),
-               "shadow/fixture-ca.pem": (CACHE / "fixture/cert.pem").read_bytes(),
+    bootstrap = (ROOT / "images/browser-init.sh").read_bytes()
+    if arguments.profile != "probe":
+        entrypoint = b"-m browser_worker.supervisor" if arguments.profile == "runtime" else b"/opt/shadow/runtime_qualification.py"
+        bootstrap = bootstrap.replace(b"/opt/shadow/boot_probe.py", entrypoint)
+    overlay = bytearray(cpio_file("init", bootstrap, stat.S_IFREG | 0o755))
+    payload = {"shadow/xorg.conf": (ROOT / "images/xorg.conf").read_bytes(),
                "shadow/crashes/.keep": b"",
                "shadow/config/chromium/Crash Reports/.keep": b""}
+    if arguments.profile == "probe":
+        payload.update({"shadow/browser_probe.py": (ROOT / "images/browser-probe.py").read_bytes(),
+                        "shadow/boot_probe.py": (ROOT / "images/browser-boot-probe.py").read_bytes(),
+                        "shadow/browser_scenarios.py": (ROOT / "tests/browser/guest_scenarios.py").read_bytes()})
+    if arguments.profile == "qualification":
+        payload["shadow/runtime_qualification.py"] = (ROOT / "images/browser-runtime-qualification.py").read_bytes()
+    if arguments.profile != "runtime":
+        payload["shadow/fixture-ca.pem"] = (CACHE / "fixture/cert.pem").read_bytes()
     for package in ("browser_worker", "guest_transport", "site_adapters", "shadow_common"):
         for path in sorted((ROOT / package).rglob("*")):
             if path.is_file() and path.suffix in {".py", ".json"}:
@@ -217,14 +227,16 @@ def main() -> None:
         name = "lib/" + str(path.relative_to(modules))
         overlay += cpio_file(name, b"" if path.is_dir() else path.read_bytes(), (stat.S_IFDIR | 0o755) if path.is_dir() else (stat.S_IFREG | 0o644))
     overlay += cpio_file("TRAILER!!!", b"", 0)
-    (CACHE / "initrd").write_bytes(ramdisk + gzip.compress(overlay, compresslevel=6, mtime=0))
+    initrd_name = "initrd" if arguments.profile == "probe" else "initrd-" + arguments.profile
+    (CACHE / initrd_name).write_bytes(ramdisk + gzip.compress(overlay, compresslevel=6, mtime=0))
     shutil.copyfile(ROOT / ".build/guest-cache/probe/kernel", CACHE / "kernel")
-    manifest = {"image": lock["image"], "image_manifest_sha256": lock["manifest_sha256"], "files": {}}
+    manifest = {"image": lock["image"], "profile": arguments.profile, "image_manifest_sha256": lock["manifest_sha256"], "files": {}}
     for name in ("kernel", "initrd", "disk"):
-        with (CACHE / name).open("rb") as source:
+        with (CACHE / (initrd_name if name == "initrd" else name)).open("rb") as source:
             manifest["files"][name] = hashlib.file_digest(source, "sha256").hexdigest()
-    (CACHE / "runtime-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print("browser_probe_image_built")
+    manifest_name = "runtime-manifest.json" if arguments.profile == "probe" else arguments.profile + "-manifest.json"
+    (CACHE / manifest_name).write_text(json.dumps(manifest, indent=2) + "\n")
+    print("browser_image_built")
 
 
 if __name__ == "__main__":

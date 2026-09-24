@@ -29,6 +29,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403, "")
             return
         self.server.submissions += 1
+        if self.server.hold_response is not None:
+            self.server.hold_response.wait(timeout=20)
         self.reply(303, "", {"Location": "/items", "Set-Cookie": "fixture_session=synthetic-http-only-canary; Secure; HttpOnly; SameSite=Strict; Path=/"})
 
     def reply(self, status, body, headers=None):
@@ -49,6 +51,7 @@ class Fixture(ThreadingHTTPServer):
     def __init__(self, directory: Path):
         super().__init__(("127.0.0.1", 0), Handler)
         self.submissions = 0
+        self.hold_response = None
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(directory / "cert.pem", directory / "key.pem")

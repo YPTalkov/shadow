@@ -12,6 +12,7 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
 @MainActor protocol ProtectedBrowserDriver: AnyObject {
     func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult
     func renew(sequence: Int) async throws
+    func checkLease() throws
     func revoke()
 }
 
@@ -42,12 +43,12 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
     private let access: AccessCoordinator
     private let journal: OperationJournal
     private let resolve: @MainActor (ConsentAccount, String) async throws -> PrivateCredential
-    private let makeDriver: @MainActor (QualifiedAdapterPolicy, UUID) throws -> any ProtectedBrowserDriver
+    private let makeDriver: @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver
     private var active: Session?
     private var monitor: Task<Void, Never>?
     private var closed = false
 
-    init(access: AccessCoordinator, journal: OperationJournal, resolve: @escaping @MainActor (ConsentAccount, String) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy, UUID) throws -> any ProtectedBrowserDriver) {
+    init(access: AccessCoordinator, journal: OperationJournal, resolve: @escaping @MainActor (ConsentAccount, String) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver) {
         self.access = access; self.journal = journal; self.resolve = resolve; self.makeDriver = makeDriver
         let previous = access.onRevoke
         access.onRevoke = { [weak self] grant in
@@ -109,7 +110,7 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
         let reference = try ReferenceRegistry.randomToken()
         let receipt = try journal.begin(request, caller: caller)
         do {
-            let driver = try makeDriver(adapter, caller.boot)
+            let driver = try makeDriver(adapter)
             let session = Session(reference: reference, operation: receipt.status.reference, caller: caller, account: account, adapter: adapter, grant: grant, driver: driver)
             active = session
             try access.claimRetainedSession(grantRef: grant, session: session.id)
@@ -123,6 +124,7 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
 
     private func check(_ session: Session) throws {
         access.expire()
+        try session.driver.checkLease()
         guard !closed, active === session, !Task.isCancelled,
               access.accounts.contains(where: { $0.policy == session.account.policy }),
               session.adapter.credentialOrigins.allSatisfy({ access.authorize(grantRef: session.grant, caller: session.caller, account: session.account.id, adapterID: session.adapter.id, origin: $0, action: .login, session: session.id) }) else { throw AgentAPIError.consentRequired }

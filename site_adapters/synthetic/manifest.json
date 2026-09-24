@@ -1,0 +1,14 @@
+{
+  "id": "synthetic-v1",
+  "version": 1,
+  "qualification": "synthetic-only",
+  "login": {
+    "url": "https://app.shadow.test/login",
+    "action": "https://app.shadow.test/session",
+    "success": "https://app.shadow.test/items",
+    "username": "#username",
+    "password": "#password",
+    "submit": "#submit",
+    "success_selector": "main[data-view=items]"
+  }
+}

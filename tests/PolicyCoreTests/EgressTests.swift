@@ -4,6 +4,17 @@ import Darwin
 import PolicyCore
 @testable import EgressGateway
 
+@Test func renewableEgressCannotReviveExpiredOrRevokedAuthority() throws {
+    let destination = try HTTPSDestination(host: "example.com", port: 443)
+    let lease = EgressLease(instance: "vm", boot: "boot", session: "session", destinations: [destination], expiresAt: 20)
+    try lease.renew(sequence: 1, ttl: 10, now: 15)
+    #expect(throws: EgressError.denied) { try lease.renew(sequence: 1, ttl: 10, now: 16) }
+    #expect(throws: EgressError.denied) { try lease.renew(sequence: 2, ttl: 11, now: 16) }
+    try lease.check(instance: "vm", boot: "boot", session: "session", destination: destination, now: 24)
+    #expect(throws: EgressError.denied) { try lease.renew(sequence: 2, ttl: 10, now: 25) }
+    #expect(throws: EgressError.denied) { try lease.renew(sequence: 3, ttl: 10, now: 15) }
+}
+
 @Test func egressRejectsSpecialAndAmbiguousAddresses() throws {
     for address in ["0.0.0.0", "10.1.2.3", "100.64.1.1", "127.0.0.1", "169.254.169.254", "172.31.255.255", "192.168.1.1", "192.0.0.8", "192.0.2.1", "192.88.99.1", "198.18.0.1", "198.51.100.2", "203.0.113.1", "224.0.0.1", "255.255.255.255", "::", "::1", "::ffff:127.0.0.1", "64:ff9b::a00:1", "fc00::1", "fe80::1", "ff02::1", "2001:db8::1", "2002:7f00:1::", "3fff::1"] {
         #expect(!PublicAddress.isAllowed(address), "Special address accepted")

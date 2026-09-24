@@ -19,7 +19,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "PolicyCore", linkerSettings: [.linkedLibrary("sqlite3")]),
-        .target(name: "BrokerHost", dependencies: ["PolicyCore", "RuntimeHost"]),
+        .target(name: "BrokerHost", dependencies: ["PolicyCore", "RuntimeHost", "EgressGateway"]),
         .target(name: "RuntimeHost", dependencies: ["PolicyCore"]),
         .target(name: "ModelRelay", dependencies: ["PolicyCore"]),
         .target(name: "EgressGateway", dependencies: ["PolicyCore"]),

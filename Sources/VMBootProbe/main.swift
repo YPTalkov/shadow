@@ -161,5 +161,12 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
 }
 
 let probe = Probe()
-do { try probe.start() } catch { print("vm_configuration_failed"); exit(1) }
+if CommandLine.arguments.dropFirst().first == "browser-session" {
+    Task { @MainActor in
+        do { try await SessionProbe.run(); print("BROWSER_SESSION=pass"); exit(0) }
+        catch { print("BROWSER_SESSION=failed"); exit(1) }
+    }
+} else {
+    do { try probe.start() } catch { print("vm_configuration_failed"); exit(1) }
+}
 RunLoop.main.run()

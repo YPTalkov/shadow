@@ -11,6 +11,7 @@ import PolicyCore
     var reached: AuthenticationStage?
     var resume: CheckedContinuation<Void, Never>?
     func renew(sequence: Int) async throws { if revoked { throw AgentAPIError.unavailable } }
+    func checkLease() throws { if revoked { throw AgentAPIError.unavailable } }
     func revoke() { revoked = true; resume?.resume(); resume = nil }
     func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult {
         for stage in AuthenticationStage.allCases {
@@ -42,7 +43,7 @@ import PolicyCore
     let service = ProtectedSessionService(access: access, journal: journal, resolve: { account, origin in
         #expect(account.id == id && account.policy.revision == 1 && origin == "https://app.shadow.test")
         return PrivateCredential(username: "owner", password: "synthetic-password-canary", totp: nil)
-    }, makeDriver: { _, _ in browser })
+    }, makeDriver: { _ in browser })
     let api = AgentAPI(access: access); api.protectedService = service
     let request = AgentRequest(id: UUID(), operation: "auth.login", arguments: ["account_ref": .string(accountRef), "grant_ref": .string(grant), "adapter_id": .string("synthetic-v1")])
     return (service, access, api, request, caller, dir)

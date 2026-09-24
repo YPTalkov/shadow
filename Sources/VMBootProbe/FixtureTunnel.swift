@@ -7,7 +7,8 @@ import RuntimeHost
 /// Synthetic test executable only. Never linked into the owner application.
 /// The only mapping is app.shadow.test:443 to the runner's loopback TLS fixture.
 enum FixtureTunnel {
-    static func run(guest: Int32, port: UInt16, transport: FramedChannel) throws {
+    static func run(guest: Int32, port: UInt16, transport: FramedChannel, authorize: () throws -> Void = {}) throws {
+        try authorize()
         let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
         guard fd >= 0, port >= 1024 else { throw FrameError.invalidFrame }
         defer { shutdown(fd, SHUT_RDWR); Darwin.close(fd) }
@@ -21,8 +22,10 @@ enum FixtureTunnel {
         }
         guard connected == 0 else { throw FrameError.invalidFrame }
         let deadline = DeadlineClock.now + 10
+        try authorize()
         try transport.write(JSONSerialization.data(withJSONObject: ["kind": "connected"]))
         try Gateway.forward(guest: guest, host: fd) {
+            try authorize()
             guard DeadlineClock.now < deadline else { throw EgressError.denied }
         }
     }
