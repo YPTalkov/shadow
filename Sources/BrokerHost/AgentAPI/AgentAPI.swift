@@ -156,6 +156,9 @@ public enum AgentDomainResult: Sendable {
                 return consent(request.operation == "operation.cancel" ? try access.cancelRequest(reference, caller: caller) : reply)
             }
         case "auth.login":
+            // The protected service checks durable receipts before resolving
+            // expiring account refs or claiming a retained grant a second time.
+            if protectedService?.availableOperations.contains("auth.login") == true { break }
             let account = try access.accountForReference(args["account_ref"]!.string!, caller: caller)
             let adapterID = args["adapter_id"]!.string!
             guard let adapter = access.adapter(adapterID), !adapter.credentialOrigins.isEmpty,

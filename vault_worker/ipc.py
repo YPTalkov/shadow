@@ -18,6 +18,7 @@ from .editor import EditorHandoff
 from .ingest import IngestSession, SourceCapabilities, SourceEnrollment, IngestError
 from .conflicts import resolve as resolve_conflict
 from . import encrypted_metadata
+from .credentials import resolve as resolve_credential
 
 MAX_MESSAGE = 2 * 1024 * 1024  # Private host channel; includes a bounded source frame.
 ERROR_CODES = {
@@ -33,7 +34,7 @@ ERROR_CODES = {
     "invalid_record", "unsupported_message", "unstable_identity", "unsupported_credential",
     "contradictory_coverage", "unsupported_evidence", "batch_conflict", "generation_conflict",
     "ambiguous_identity", "contradictory_evidence", "unknown_group", "history_limit",
-    "invalid_group_hierarchy", "stale_conflict", "unlinked_identity",
+    "invalid_group_hierarchy", "stale_conflict", "unlinked_identity", "stale_credential",
 }
 
 
@@ -234,6 +235,10 @@ class Worker:
             return {"state": "locked"}
         if self.password is None:
             raise VaultStoreError("vault_locked")
+        if kind == "credential.resolve":
+            if set(payload) != {"entry_id", "expected_revision", "origin", "include_totp"}:
+                raise VaultStoreError("invalid_request")
+            return resolve_credential(self.store.open(self.password), **payload)
         if kind == "editor.begin":
             if payload:
                 raise ProtocolError

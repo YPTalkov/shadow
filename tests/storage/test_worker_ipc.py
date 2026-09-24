@@ -93,6 +93,15 @@ def test_private_worker_create_import_lock_and_anchor(tmp_path):
         assert catalog["payload"]["items"][0]["title"] == "Synthetic"
         assert "synthetic-password-canary" not in json.dumps(catalog)
         assert "synthetic-notes-canary" not in json.dumps(catalog)
+        selected = catalog["payload"]["items"][0]
+        resolution = {"entry_id": selected["id"], "expected_revision": selected["revision"], "origin": "https://example.invalid", "include_totp": False}
+        assert worker.call("credential.resolve", resolution)["payload"] == {
+            "username": "owner", "password": "synthetic-password-canary", "totp": None,
+        }
+        for changed in ({"expected_revision": 2}, {"expected_revision": True}, {"origin": "https://other.invalid"}, {"entry_id": str(uuid.uuid4())}):
+            response = worker.call("credential.resolve", resolution | changed)
+            assert response["kind"] == "error"
+            assert "synthetic-password-canary" not in json.dumps(response)
         assert worker.call("vault.reveal", {})["payload"]["code"] == "unsupported_operation"
         assert worker.call("vault.lock", {})["payload"]["state"] == "locked"
     finally:

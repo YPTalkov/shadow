@@ -167,6 +167,12 @@ public actor PrivateVaultWorker {
         await Task.detached { child.waitUntilExit() }.value
     }
 
+    // Never dispatched by the agent API. The session coordinator checks grant
+    // and revision both before and after awaiting this private worker request.
+    func resolveCredential(entry: UUID, revision: UInt64, origin: String, includeTOTP: Bool = false) async throws -> PrivateCredential {
+        try await request("credential.resolve", payload: CredentialRequest(entryId: entry.uuidString.lowercased(), expectedRevision: revision, origin: origin, includeTotp: includeTOTP))
+    }
+
     public func csvHeaders(path: URL) async throws -> [String] {
         let result: Headers = try await request("csv.headers", payload: PathRequest(path: path.path))
         return result.headers
@@ -293,7 +299,7 @@ public actor PrivateVaultWorker {
             guard !closed else { throw VaultWorkerError.unavailable }
             if reply.kind == "error" {
                 let error = try JSONDecoder().decode(ReportedError.self, from: reply.payload)
-                throw VaultWorkerError.reported(Self.safeCodes.contains(error.code) ? error.code : "worker_unavailable")
+                throw VaultWorkerError.reported(Self.safeCodes.contains(error.code) || error.code == "stale_credential" ? error.code : "worker_unavailable")
             }
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -382,5 +388,6 @@ public actor PrivateVaultWorker {
     private struct SourceStatus: Decodable, Sendable { let sources: [OwnerSourceSummary] }
     private struct SourceStatusRequest: Encodable, Sendable { let instances: [String] }
     private struct ResolveConflict: Encodable, Sendable { let entryId: String; let expectedRevision: UInt64; let choice: String; let operationId: String }
+    private struct CredentialRequest: Encodable, Sendable { let entryId: String; let expectedRevision: UInt64; let origin: String; let includeTotp: Bool }
     private static let safeCodes: Set<String> = ["already_exists", "ambiguous_identity", "batch_conflict", "contradictory_coverage", "contradictory_evidence", "editor_active", "editor_changed", "editor_unavailable", "external_modification", "generation_conflict", "history_limit", "identity_mismatch", "invalid_credentials", "invalid_csv", "invalid_enrollment", "invalid_group_hierarchy", "invalid_mapping", "invalid_record", "invalid_request", "invalid_rows", "invalid_vault", "kdf_limit_exceeded", "limit_exceeded", "operation_conflict", "preview_required", "recovery_required", "sequence_mismatch", "source_changed", "source_unavailable", "stale_conflict", "storage_unavailable", "unknown_group", "unlinked_identity", "unsafe_path", "unsafe_source", "unstable_identity", "unsupported_credential", "unsupported_evidence", "unsupported_message", "unsupported_operation", "unsupported_profile", "unsupported_version", "vault_locked", "vault_unavailable", "worker_unavailable", "writer_busy"]
 }

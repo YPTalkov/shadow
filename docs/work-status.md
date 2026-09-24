@@ -12,9 +12,9 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U6 | Partial | Native vault/import/editor/consent/revocation/source flows and full catalog scope pass. Actual VM/session integration and accessibility qualification remain. |
 | U7 | Partial | Private consumer, native restriction publication, pinned executable enrollment, Keychain HMAC custody, refresh/removal, conflicts and source/editor conformance implemented. Browser-interruption and packaged qualification remain. |
 | U8 | Partial | Shared request/result contracts, native API, CLI/MCP/PTC parity (29 tests), native authority tests and actual Linux Codex MCP pass. Protected jobs and production VM enrollment remain. |
-| U9 | In progress | Sandboxed headed Chromium in the no-NIC VM; ten atomic-auth scenarios, real certificate-validated HTTPS login/redirect, revoked proxy tunnels and forced-crash dump suppression pass. Native credential delivery, serialized session service and renewable host leases remain. |
+| U9 | In progress | Sandboxed headed Chromium in the no-NIC VM; ten atomic-auth scenarios, real certificate-validated HTTPS login/redirect, revoked proxy tunnels and forced-crash dump suppression pass. Native selected-revision resolver, serial session authority and durable submit receipts pass targeted tests. Production VM driver, root watchdog and renewable host leases remain. |
 | U10 | Pending | Qualified synthetic adapter, safe views and owner challenges. |
-| U11 | Pending | Integrated lifecycle, cancellation and audit. |
+| U11 | Pending | Submit receipts recover unknown outcomes without replay; retained-grant retries recover status. Remaining: integrated lifecycle, independent monitors, challenge cancellation and audit. |
 | U12 | Pending | Backup/restore and recovery UI. |
 | U13 | Pending | Packaged cross-boundary security and end-to-end suite. |
 | U14 | Pending | Packaging, independent review and owner rollout checkpoint. |

@@ -1,7 +1,7 @@
 import Foundation
 import Security
 import Testing
-import BrokerHost
+@testable import BrokerHost
 import PolicyCore
 
 @Test func nativeWorkerUsesKeychainAndImportsWithoutReturningSecrets() async throws {
@@ -32,6 +32,10 @@ import PolicyCore
     let catalog = try await client.catalog()
     #expect(catalog.items.map(\.title) == ["Native"])
     #expect(!String(decoding: try JSONEncoder().encode(catalog), as: UTF8.self).contains("synthetic-password-canary"))
+    let selected = try #require(catalog.items.first)
+    let credential = try await client.resolveCredential(entry: #require(UUID(uuidString: selected.id)), revision: selected.revision, origin: "https://example.invalid")
+    #expect(credential.username == "owner" && credential.password == "synthetic-password-canary" && credential.totp == nil)
+    #expect(!String(reflecting: credential).contains("synthetic-password-canary"))
     await client.lock()
     let reopened = try await PrivateVaultWorker.launch(python: root.appendingPathComponent(".venv/bin/python"), vaultDirectory: directory.appendingPathComponent("vault"), vaultID: vaultID)
     try await reopened.unlock(password: "synthetic-master-password")
