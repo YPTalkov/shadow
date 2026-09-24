@@ -8,6 +8,8 @@ public final class OwnerVaultModel {
     public let configuration: OwnerConfiguration
     public let access = AccessCoordinator()
     public let agentAPI: AgentAPI
+    public private(set) var protectedSessions: ProtectedSessionService?
+    private var operationJournal: OperationJournal?
     public private(set) var unlocked = false
     public private(set) var busy = false
     public private(set) var status = "Locked"
@@ -36,6 +38,7 @@ public final class OwnerVaultModel {
     public init(configuration: OwnerConfiguration) {
         self.configuration = configuration
         agentAPI = AgentAPI(access: access)
+        for adapter in QualifiedAdapterPolicy.packaged { access.installQualifiedAdapter(adapter) }
         do {
             let store = try SourceEnrollmentStore(root: configuration.root, vaultID: configuration.vaultID)
             sourceStore = store
@@ -70,6 +73,14 @@ public final class OwnerVaultModel {
             guard generation == epoch else { return }
             accounts = items
             access.openVault(accounts: Self.consentAccounts(items))
+            if let image = configuration.browserImage {
+                if operationJournal == nil { operationJournal = try OperationJournal(path: configuration.root.appendingPathComponent("operations.sqlite")) }
+                if let journal = operationJournal {
+                    let service = ProtectedSessionService(access: access, journal: journal, worker: client, image: image)
+                    protectedSessions = service
+                    agentAPI.protectedService = service
+                }
+            }
             nextOffset = nil
             sourceSummaries = summaries
             unlocked = true
@@ -89,6 +100,9 @@ public final class OwnerVaultModel {
         defer { isLocking = false; busy = false }
         epoch += 1
         sourceRuntime.stop()
+        protectedSessions?.shutdown()
+        protectedSessions = nil
+        agentAPI.protectedService = nil
         access.lock()
         let client = worker
         worker = nil

@@ -12,6 +12,25 @@ public struct BrowserVMImage: Sendable {
     public init(kernel: URL, ramdisk: URL, disk: URL, identity: VMImageIdentity) {
         self.kernel = kernel; self.ramdisk = ramdisk; self.disk = disk; self.identity = identity
     }
+
+    public static func packaged(at directory: URL) throws -> Self {
+        let bytes = try Data(contentsOf: directory.appendingPathComponent("production-manifest.json"))
+        let manifest = try BoundedJSON.parse(bytes, maximumBytes: 8192)
+        guard manifest["profile"]?.string == "runtime", let files = manifest["files"]?.object,
+              let kernel = files["kernel"]?.string, let ramdisk = files["initrd"]?.string, let disk = files["disk"]?.string else { throw AgentAPIError.unavailable }
+        return Self(kernel: directory.appendingPathComponent("kernel"), ramdisk: directory.appendingPathComponent("initrd-runtime"),
+                    disk: directory.appendingPathComponent("disk"), identity: VMImageIdentity(kernelSHA256: kernel, ramdiskSHA256: ramdisk, imageSHA256: disk))
+    }
+}
+
+extension QualifiedAdapterPolicy {
+    public static var packaged: [Self] {
+        (PackagedAdapters.manifests.object ?? [:]).compactMap { id, value in
+            guard let loginURL = value["login"]?["url"]?.string, let host = URLComponents(string: loginURL)?.host,
+                  let origin = value["origin"]?.string else { return nil }
+            return Self(id: id, credentialOrigins: ["https://" + host], resourceOrigins: [origin], actions: [.login, .observe, .extract, .navigate, .click])
+        }
+    }
 }
 
 /// Only the diagnostic executable supplies this fixed synthetic gateway. The
@@ -42,7 +61,9 @@ private actor ControlWriter {
     init(image: BrowserVMImage, adapter: QualifiedAdapterPolicy, fixture: BrowserFixtureTunnel? = nil) throws {
         self.image = image; self.adapter = adapter; self.fixture = fixture
         if fixture != nil {
-            guard adapter.id == "synthetic-v1", adapter.credentialOrigins == ["https://app.shadow.test"], adapter.resourceOrigins.isSubset(of: ["https://app.shadow.test"]) else { throw AgentAPIError.unavailable }
+            guard ["synthetic-v1", "synthetic-sso-v1"].contains(adapter.id),
+                  adapter.credentialOrigins == [adapter.id == "synthetic-sso-v1" ? "https://auth.shadow.test" : "https://app.shadow.test"],
+                  adapter.resourceOrigins == ["https://app.shadow.test"] else { throw AgentAPIError.unavailable }
             // Synthetic forwarding still uses the real expiring native lease.
             // This sentinel destination is never resolved or connected to.
             destinations = [try HTTPSDestination(host: "example.com", port: 443)]
@@ -56,12 +77,14 @@ private actor ControlWriter {
         super.init()
     }
 
-    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult {
+    var ownerMachine: VZVirtualMachine? { revoked ? nil : machine }
+
+    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential, owner: @escaping @MainActor () async throws -> Void) async throws -> BrowserAuthenticationResult {
         do {
             try await start()
             guard try await receive() == .object(["kind": .string("ready")]) else { throw AgentAPIError.unavailable }
             try await send(.object(["kind": .string("login"), "adapter_id": .string(adapter.id)]))
-            for _ in 0..<8 {
+            for _ in 0..<10 {
                 let message = try await receive()
                 if let fields = message.object, Set(fields.keys) == ["kind", "stage"], fields["kind"]?.string == "authorize",
                    let stage = fields["stage"]?.string.flatMap(AuthenticationStage.init(rawValue:)) {
@@ -70,11 +93,17 @@ private actor ControlWriter {
                 } else if message == .object(["kind": .string("resolve")]) {
                     let credential = try await resolve()
                     try await send(.object(["kind": .string("credential"), "username": .string(credential.username), "password": .string(credential.password), "totp": credential.totp.map(JSONValue.string) ?? .null]))
-                } else if let fields = message.object, Set(fields.keys) == ["kind", "state"], fields["kind"]?.string == "authentication" {
+                } else if message == .object(["kind": .string("owner_challenge")]) {
+                    try await owner()
+                    try await send(.object(["kind": .string("owner_completed")]))
+                } else if let fields = message.object, Set(fields.keys) == ["kind", "state", "code"], fields["kind"]?.string == "authentication" {
+                    let code = fields["code"]?.string.flatMap(AgentAPIError.init(rawValue:))
                     switch fields["state"]?.string {
-                    case "succeeded": return .succeeded
-                    case "failed": return .failed
-                    case "outcome_unknown": return .outcomeUnknown
+                    case "succeeded":
+                        guard fields["code"] == .null else { throw AgentAPIError.unavailable }
+                        return .succeeded
+                    case "failed": return .failed(code ?? .unavailable)
+                    case "outcome_unknown": return .outcomeUnknown(code ?? .unavailable)
                     default: throw AgentAPIError.unavailable
                     }
                 } else { throw AgentAPIError.unavailable }
@@ -168,13 +197,14 @@ private actor ControlWriter {
             } else if role == .browserEgress, let lease {
                 let instance = identity.instance.uuidString, boot = identity.boot.uuidString, session = session
                 let destinations = destinations, fixture = fixture, descriptor = connection.fileDescriptor
+                let fixtureHosts = Set(adapter.credentialOrigins.union(adapter.resourceOrigins).compactMap { URLComponents(string: $0)?.host })
                 Task {
                     _ = await Task.detached {
                         do {
                             let message = try BoundedJSON.parse(transport.read(timeout: 2), maximumBytes: 512)
                             guard let fields = message.object, Set(fields.keys) == ["host", "port"], fields["port"]?.integer == 443, let host = fields["host"]?.string else { throw EgressError.denied }
                             if let fixture {
-                                guard host == "app.shadow.test", let sentinel = destinations.first else { throw EgressError.denied }
+                                guard fixtureHosts.contains(host), let sentinel = destinations.first else { throw EgressError.denied }
                                 try fixture(descriptor, transport) { try lease.check(instance: instance, boot: boot, session: session, destination: sentinel) }
                             } else {
                                 let destination = try HTTPSDestination(host: host, port: 443)
@@ -209,14 +239,14 @@ private actor ControlWriter {
 
 extension ProtectedSessionService {
     public convenience init(access: AccessCoordinator, journal: OperationJournal, worker: PrivateVaultWorker, image: BrowserVMImage) {
-        self.init(access: access, journal: journal, resolve: { account, origin in
-            try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin)
+        self.init(access: access, journal: journal, resolve: { account, origin, includeTOTP in
+            try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin, includeTOTP: includeTOTP)
         }, makeDriver: { adapter in try ProtectedBrowserVM(image: image, adapter: adapter) })
     }
 
     package convenience init(access: AccessCoordinator, journal: OperationJournal, worker: PrivateVaultWorker, image: BrowserVMImage, fixtureTunnel: @escaping BrowserFixtureTunnel) {
-        self.init(access: access, journal: journal, resolve: { account, origin in
-            try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin)
+        self.init(access: access, journal: journal, resolve: { account, origin, includeTOTP in
+            try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin, includeTOTP: includeTOTP)
         }, makeDriver: { adapter in try ProtectedBrowserVM(image: image, adapter: adapter, fixture: fixtureTunnel) })
     }
 }

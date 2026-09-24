@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Packaged Shadow adapter v1",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]{1,128}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "qualification": {
+      "enum": [
+        "synthetic-only",
+        "qualified"
+      ]
+    },
+    "origin": {
+      "type": "string",
+      "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+      "maxLength": 2048
+    },
+    "routes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_.-]{1,128}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+        "maxLength": 2048
+      },
+      "minProperties": 1,
+      "maxProperties": 32
+    },
+    "views": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_.-]{1,128}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\^/.*\\$$"
+          },
+          "root": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "rows": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "fields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,128}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "minProperties": 1,
+            "maxProperties": 8
+          },
+          "actions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,128}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^\\^/.*\\$$"
+                }
+              },
+              "required": [
+                "selector",
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "minProperties": 0,
+            "maxProperties": 4
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "root",
+          "rows",
+          "fields",
+          "actions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "login": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+          "maxLength": 2048
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+          "maxLength": 2048
+        },
+        "success": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+          "maxLength": 2048
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "submit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "success_selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "entry_url": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+          "maxLength": 2048
+        },
+        "success_origin": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+          "maxLength": 2048
+        },
+        "challenge": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+              "maxLength": 2048
+            },
+            "action": {
+              "type": "string",
+              "pattern": "^https://[a-z0-9.-]+(?:/[^?#]*)?$",
+              "maxLength": 2048
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "submit": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "url",
+            "action",
+            "code",
+            "submit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "url",
+        "action",
+        "success",
+        "username",
+        "password",
+        "submit",
+        "success_selector"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "qualification",
+    "origin",
+    "routes",
+    "views",
+    "login"
+  ],
+  "additionalProperties": false
+}

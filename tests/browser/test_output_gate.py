@@ -73,3 +73,15 @@ def test_explicit_revocation_cannot_be_renewed():
     lease.revoke()
     with pytest.raises(BrowserFailure, match="lease_expired"):
         lease.renew(sequence=2, ttl_ms=10000)
+
+
+def test_closed_output_can_report_fixed_failure_before_control_teardown():
+    lease = WorkerLease()
+    lease.renew(sequence=1, ttl_ms=10000)
+    gate = OutputGate(lease)
+    gate.close()
+    lease.check()
+    with pytest.raises(BrowserFailure, match="output_closed"):
+        gate.output_checkpoint("doc")
+    with pytest.raises(BrowserFailure, match="session_closed"):
+        gate.transition(Phase.VERIFYING)

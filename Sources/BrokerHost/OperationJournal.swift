@@ -127,6 +127,12 @@ public final class OperationJournal {
         try execute("UPDATE operation SET submitted=1 WHERE reference=?", [reference])
     }
 
+    public func setOwnerAction(_ reference: String, caller: EnrolledAgent, waiting: Bool) throws {
+        let current = try status(reference, caller: caller)
+        guard current.state == (waiting ? .running : .needsOwnerAction) else { throw OperationJournalError.invalidTransition }
+        try execute("UPDATE operation SET state=? WHERE reference=?", [waiting ? "needs_owner_action" : "running", reference])
+    }
+
     public func finish(_ reference: String, caller: EnrolledAgent, state: AgentOperationState, error: AgentAPIError? = nil) throws {
         let current = try status(reference, caller: caller)
         guard [.running, .pendingOwner, .needsOwnerAction].contains(current.state),

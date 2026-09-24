@@ -1,0 +1,54 @@
+{
+  "id": "synthetic-sso-v1",
+  "version": 1,
+  "qualification": "synthetic-only",
+  "origin": "https://app.shadow.test",
+  "routes": {
+    "items": "https://app.shadow.test/items"
+  },
+  "views": [
+    {
+      "id": "items",
+      "path": "^/items$",
+      "root": "main[data-view=items]",
+      "rows": "li[data-record]",
+      "fields": {
+        "title": "span[data-field=title]"
+      },
+      "actions": {
+        "open": {
+          "selector": "a[data-action=open]",
+          "path": "^/items/[a-z0-9-]{1,64}$"
+        }
+      }
+    },
+    {
+      "id": "item_detail",
+      "path": "^/items/[a-z0-9-]{1,64}$",
+      "root": "main[data-view=detail]",
+      "rows": "article",
+      "fields": {
+        "title": "h1[data-field=title]",
+        "status": "span[data-field=status]"
+      },
+      "actions": {}
+    }
+  ],
+  "login": {
+    "url": "https://auth.shadow.test/login",
+    "action": "https://auth.shadow.test/session",
+    "success": "https://app.shadow.test/items",
+    "username": "#username",
+    "password": "#password",
+    "submit": "#submit",
+    "success_selector": "main[data-view=items]",
+    "challenge": {
+      "url": "https://auth.shadow.test/verify",
+      "action": "https://auth.shadow.test/verify-session",
+      "code": "#code",
+      "submit": "#verify"
+    },
+    "entry_url": "https://app.shadow.test/start",
+    "success_origin": "https://app.shadow.test"
+  }
+}

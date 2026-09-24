@@ -80,6 +80,11 @@ public struct OwnerPanel: View {
             }
         }
         .navigationTitle("Shadow")
+        .sheet(item: Binding(get: { model.protectedSessions?.challenges.pending }, set: { value in
+            if value == nil, let service = model.protectedSessions, let challenge = service.challenges.pending { service.challenges.cancel(challenge.id) }
+        })) { challenge in
+            if let service = model.protectedSessions { PrivateBrowserView(service: service, challenge: challenge) }
+        }
         .task { await model.refreshEditorStatus() }
         .onChange(of: model.unlocked) { _, unlocked in if !unlocked { password = ""; confirmation = "" } }
     }

@@ -1,12 +1,16 @@
 """Credential use in a pinned document, with a closed observation gate throughout."""
 from collections.abc import Awaitable, Callable
+import asyncio
 from dataclasses import dataclass, field
 import ipaddress
 import json
+import re
 from urllib.parse import urlsplit
 
 from .errors import BrowserFailure, Code
 from .output_gate import OutputGate, Phase
+from .challenges import ChallengeSpec, Totp, INSTALL_CHALLENGE, FILL_CHALLENGE
+from .watchdog import boot_time
 
 
 @dataclass(frozen=True, repr=False)
@@ -50,9 +54,21 @@ class LoginSpec:
     password: str
     submit: str
     success_selector: str
+    challenge: ChallengeSpec | None = None
+    entry_url: str | None = None
+    success_origin: str | None = None
 
     def __post_init__(self):
-        if len({exact_https_url(value) for value in (self.url, self.action, self.success)}) != 1:
+        origin = exact_https_url(self.url)
+        if exact_https_url(self.action) != origin or exact_https_url(self.success) != (self.success_origin or origin):
+            raise BrowserFailure(Code.INVALID_REQUEST)
+        if self.success_origin is not None and exact_https_url(self.success_origin) != self.success_origin:
+            raise BrowserFailure(Code.INVALID_REQUEST)
+        if self.entry_url is not None and exact_https_url(self.entry_url) not in {origin, self.success_origin}:
+            raise BrowserFailure(Code.INVALID_REQUEST)
+        if type(self.challenge) is dict:
+            object.__setattr__(self, "challenge", ChallengeSpec(**self.challenge))
+        if self.challenge is not None and (not isinstance(self.challenge, ChallengeSpec) or exact_https_url(self.challenge.url) != origin):
             raise BrowserFailure(Code.INVALID_REQUEST)
         for selector in (self.username, self.password, self.submit, self.success_selector):
             if type(selector) is not str or not 1 <= len(selector) <= 256:
@@ -126,6 +142,7 @@ class AtomicAuthenticator:
         self.submitted = False
 
     async def document(self) -> str:
+        self._single_page()
         tree = (await self._cdp.send("Page.getFrameTree"))["frameTree"]
         if tree.get("childFrames"):
             raise BrowserFailure(Code.DOCUMENT_CHANGED)
@@ -133,17 +150,20 @@ class AtomicAuthenticator:
         return frame["id"] + ":" + frame["loaderId"]
 
     async def _evaluate(self, expression: str):
+        self._single_page()
         self.gate.lease.check()
         result = await self._cdp.send("Runtime.evaluate", {
             "expression": expression, "contextId": self._context,
             "returnByValue": True, "awaitPromise": False,
         })
         self.gate.lease.check()
+        self._single_page()
         if "exceptionDetails" in result:
             raise BrowserFailure(Code.DOCUMENT_CHANGED)
         return result.get("result", {}).get("value")
 
     async def _capture(self):
+        self._single_page()
         tree = (await self._cdp.send("Page.getFrameTree"))["frameTree"]
         if tree.get("childFrames") or tree["frame"]["url"] != self.spec.url:
             raise BrowserFailure(Code.DOCUMENT_CHANGED)
@@ -161,7 +181,94 @@ class AtomicAuthenticator:
         if await self._evaluate("globalThis.__shadowCheckpoint?.valid() === true") is not True:
             raise BrowserFailure(Code.DOCUMENT_CHANGED)
 
-    async def run(self, resolve: Callable[[], Awaitable[Credential]], authorize: Callable[[str], Awaitable[None]]) -> AuthResult:
+    async def _destination(self, *, permit_challenge):
+        deadline = boot_time() + 15
+        while boot_time() < deadline:
+            self._single_page()
+            self.gate.lease.check()
+            tree = (await self._cdp.send("Page.getFrameTree"))["frameTree"]
+            if tree.get("childFrames"):
+                raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+            url = tree["frame"]["url"]
+            if url == self.spec.success:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
+                return False
+            if permit_challenge and self.spec.challenge is not None and url == self.spec.challenge.url:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
+                return True
+            await asyncio.sleep(0.05)
+        raise BrowserFailure(Code.AUTHENTICATION_FAILED)
+
+    def _single_page(self):
+        if len(self.page.context.pages) != 1:
+            raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+
+    async def _challenge(self, credential, authorize, owner, protect):
+        spec = self.spec.challenge
+        self.gate.transition(Phase.OWNER)
+        tree = (await self._cdp.send("Page.getFrameTree"))["frameTree"]
+        if tree.get("childFrames") or tree["frame"]["url"] != spec.url:
+            raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+        self._document = tree["frame"]["id"] + ":" + tree["frame"]["loaderId"]
+        self._context = (await self._cdp.send("Page.createIsolatedWorld", {"frameId": tree["frame"]["id"], "worldName": "shadow-protected", "grantUniveralAccess": False}))["executionContextId"]
+        if await self._evaluate(INSTALL_CHALLENGE + "(" + json.dumps({name: getattr(spec, name) for name in ("url", "action", "code", "submit")}) + ")") is not True:
+            raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+        if credential.totp:
+            seed = Totp.parse(credential.totp)
+            await authorize("challenge_fill")
+            await self._validate()
+            value = seed.code()
+            protect(value)
+            if await self._evaluate(FILL_CHALLENGE + "(" + json.dumps(value) + ")") is not True:
+                raise BrowserFailure(Code.DOCUMENT_CHANGED)
+            value = None
+            await authorize("challenge_submit")
+            await self._validate()
+            try:
+                if await self._evaluate(SUBMIT_CHECKPOINT) is not True:
+                    raise BrowserFailure(Code.DOCUMENT_CHANGED)
+            except Exception:
+                self.gate.lease.check()
+        else:
+            if owner is None:
+                raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+            # Remember completed OTP inputs in the trusted process before the
+            # owner can navigate away. A page that reflects the code into a
+            # qualified safe field must still be rejected by the output guard.
+            codes, invalid = set(), False
+            context = self._context
+
+            def owner_input(event):
+                nonlocal invalid
+                if event.get("name") != "__shadowOwnerCode" or event.get("executionContextId") != context:
+                    return
+                value = event.get("payload")
+                if type(value) is not str or re.fullmatch(r"[0-9]{6,8}", value) is None or len(codes) >= 64:
+                    invalid = True
+                elif value not in codes:
+                    codes.add(value)
+                    protect(value)
+
+            await self._cdp.send("Runtime.addBinding", {"name": "__shadowOwnerCode", "executionContextId": context})
+            self._cdp.on("Runtime.bindingCalled", owner_input)
+            await self._evaluate(r'''(() => {
+                const checkpoint = globalThis.__shadowCheckpoint;
+                const capture = () => {
+                    if (!checkpoint.valid()) { __shadowOwnerCode('invalid'); return; }
+                    const value = checkpoint.code.value;
+                    if (value.length >= 6) __shadowOwnerCode(value.length <= 8 ? value : 'invalid');
+                };
+                window.addEventListener('input', event => { if (event.target === checkpoint.code) capture(); }, true);
+                window.addEventListener('submit', capture, true);
+            })()''')
+            await asyncio.wait_for(owner(), timeout=120)
+            # Flush earlier binding events before releasing the protected gate.
+            await self._cdp.send("Runtime.evaluate", {"expression": "1", "returnByValue": True})
+            if invalid or not codes:
+                raise BrowserFailure(Code.UNSUPPORTED_CHALLENGE)
+        await self._destination(permit_challenge=False)
+
+    async def run(self, resolve: Callable[[], Awaitable[Credential]], authorize: Callable[[str], Awaitable[None]], *, owner=None, protect=lambda _: None) -> AuthResult:
         """The caller holds its session lock. Each callback rechecks native authority.
 
         authorize('submit') must persist the uncertain-submit checkpoint before
@@ -171,7 +278,9 @@ class AtomicAuthenticator:
         try:
             self.gate.transition(Phase.NAVIGATING)
             await authorize("navigate")
-            await self.page.goto(self.spec.url, wait_until="domcontentloaded", timeout=15000)
+            await self.page.goto(self.spec.entry_url or self.spec.url, wait_until="domcontentloaded", timeout=15000)
+            if self.spec.entry_url:
+                await self.page.wait_for_url(self.spec.url, wait_until="domcontentloaded", timeout=15000)
             self._cdp = await self.page.context.new_cdp_session(self.page)
             await self._capture()
             self.gate.transition(Phase.RESOLVING)
@@ -202,7 +311,8 @@ class AtomicAuthenticator:
             else:
                 if acknowledged is not True:
                     raise BrowserFailure(Code.DOCUMENT_CHANGED)
-            await self.page.wait_for_url(self.spec.success, wait_until="domcontentloaded", timeout=15000)
+            if await self._destination(permit_challenge=True):
+                await self._challenge(credential, authorize, owner, protect)
             self.gate.transition(Phase.VERIFYING)
             await authorize("verify")
             # A fresh document discards the form's JS state. Context secrets and
@@ -221,9 +331,9 @@ class AtomicAuthenticator:
                 await self.page.context.close()
             except BaseException:
                 pass
-            if self.submitted:
-                return AuthResult("outcome_unknown", Code.OUTCOME_UNKNOWN.value)
             code = error.code if isinstance(error, BrowserFailure) else Code.UNAVAILABLE
+            if self.submitted:
+                return AuthResult("outcome_unknown", code.value)
             return AuthResult("failed", code.value)
         finally:
             credential = None

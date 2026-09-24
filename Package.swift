@@ -24,7 +24,7 @@ let package = Package(
         .target(name: "ModelRelay", dependencies: ["PolicyCore"]),
         .target(name: "EgressGateway", dependencies: ["PolicyCore"]),
         .executableTarget(name: "VMConfigProbe", dependencies: ["RuntimeHost"]),
-        .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost"]),
+        .executableTarget(name: "VMBootProbe", dependencies: ["RuntimeHost", "ModelRelay", "EgressGateway", "BrokerHost", "OwnerUI"]),
         .target(name: "OwnerUI", dependencies: ["BrokerHost", "PolicyCore"]),
         .executableTarget(name: "OwnerApp", dependencies: ["OwnerUI"]),
         .executableTarget(name: "OwnerUIProbe", dependencies: ["OwnerUI"]),

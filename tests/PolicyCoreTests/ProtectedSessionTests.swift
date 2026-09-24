@@ -10,20 +10,62 @@ import PolicyCore
     var stopAt: AuthenticationStage?
     var reached: AuthenticationStage?
     var resume: CheckedContinuation<Void, Never>?
+    var challenge: String?
     func renew(sequence: Int) async throws { if revoked { throw AgentAPIError.unavailable } }
     func checkLease() throws { if revoked { throw AgentAPIError.unavailable } }
     func perform(_ operation: String, arguments: [String: JSONValue]) async throws -> ProtectedBrowserResult { throw AgentAPIError.capabilityUnavailable }
     func revoke() { revoked = true; resume?.resume(); resume = nil }
-    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult {
-        for stage in AuthenticationStage.allCases {
+    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential, owner: @escaping @MainActor () async throws -> Void) async throws -> BrowserAuthenticationResult {
+        for stage in AuthenticationStage.primary {
             try authorize(stage)
             reached = stage
             if stage == .resolve { _ = try await resolve(); resolutions += 1 }
             if stage == .submit { submissions += 1 }
             if stage == stopAt { await withCheckedContinuation { resume = $0 } }
+            if stage == .submit, let challenge {
+                if challenge == "owner" { try await owner() }
+                else { try authorize(.challengeFill); try authorize(.challengeSubmit) }
+            }
         }
         return .succeeded
     }
+}
+
+@Test @MainActor func protectedOwnerChallengeCannotReturnSessionBeforeOwnerCompletion() async throws {
+    for finish in ["complete", "cancel", "revoke"] {
+        let browser = SyntheticBrowser(); browser.challenge = "owner"
+        let (service, access, api, request, caller, dir) = try sessionSetup(browser: browser)
+        defer { service.shutdown(); try? FileManager.default.removeItem(at: dir) }
+        let initial = try await publicLogin(api, request, caller)
+        let reference = try #require(initial["result"]?["operation_ref"]?.string)
+        for _ in 0..<200 where service.challenges.pending == nil { await Task.yield() }
+        let checkpoint = try #require(service.challenges.pending?.id)
+        let waiting = try service.status(reference, caller: caller)
+        #expect(waiting.state == .needsOwnerAction && waiting.checkpoint == checkpoint && waiting.session == nil)
+        #expect(try await publicLogin(api, request, caller)["result"]?["state"]?.string == "needs_owner_action")
+        #expect(browser.submissions == 1)
+        if finish == "complete" { try service.completeOwnerChallenge(checkpoint) }
+        else if finish == "cancel" { service.challenges.cancel(checkpoint) }
+        else { access.revoke(try #require(request.arguments["grant_ref"]?.string)) }
+        if finish != "complete" { #expect(browser.revoked) }
+        for _ in 0..<200 where [.running, .needsOwnerAction].contains(try service.status(reference, caller: caller).state) { await Task.yield() }
+        let result = try service.status(reference, caller: caller)
+        #expect(result.state == (finish == "complete" ? .succeeded : .outcomeUnknown))
+        #expect((result.session != nil) == (finish == "complete"))
+        #expect(service.challenges.pending == nil)
+        #expect(throws: (any Error).self) { try service.completeOwnerChallenge(checkpoint) }
+    }
+}
+
+@Test @MainActor func protectedTOTPStagesRemainInsideSubmittedCheckpoint() async throws {
+    let browser = SyntheticBrowser(); browser.challenge = "totp"
+    let (service, _, api, request, caller, dir) = try sessionSetup(browser: browser)
+    defer { service.shutdown(); try? FileManager.default.removeItem(at: dir) }
+    let initial = try await publicLogin(api, request, caller)
+    let reference = try #require(initial["result"]?["operation_ref"]?.string)
+    for _ in 0..<200 where try service.status(reference, caller: caller).state == .running { await Task.yield() }
+    #expect(try service.status(reference, caller: caller).state == .succeeded)
+    #expect(service.challenges.pending == nil && browser.submissions == 1)
 }
 
 @MainActor private func sessionSetup(retained: Bool = false, browser: SyntheticBrowser) throws -> (ProtectedSessionService, AccessCoordinator, AgentAPI, AgentRequest, EnrolledAgent, URL) {
@@ -41,7 +83,7 @@ import PolicyCore
     try access.approveUse(consent.requestRef, duration: 300, approveRetained: retained)
     let grant = try #require(access.status(consent.requestRef, caller: caller).grantRef)
     let journal = try OperationJournal(path: dir.appendingPathComponent("operations.sqlite"))
-    let service = ProtectedSessionService(access: access, journal: journal, resolve: { account, origin in
+    let service = ProtectedSessionService(access: access, journal: journal, resolve: { account, origin, _ in
         #expect(account.id == id && account.policy.revision == 1 && origin == "https://app.shadow.test")
         return PrivateCredential(username: "owner", password: "synthetic-password-canary", totp: nil)
     }, makeDriver: { _ in browser })

@@ -26,6 +26,8 @@ async def main():
         await run(browser)
         from guest_safe_views import run as safe_views
         await safe_views(browser)
+        from guest_challenges import run as challenges
+        await challenges(browser)
         await browser.close()
         from browser_worker.egress import ConnectProxy
         from browser_worker.watchdog import WorkerLease

@@ -23,6 +23,10 @@
     "username": "#username",
     "password": "#password",
     "submit": "#submit",
-    "success_selector": "main[data-view=items]"
+    "success_selector": "main[data-view=items]",
+    "challenge": {
+      "url": "https://app.shadow.test/verify", "action": "https://app.shadow.test/verify-session",
+      "code": "#code", "submit": "#verify"
+    }
   }
 }

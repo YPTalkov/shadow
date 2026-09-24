@@ -1,22 +1,28 @@
 import Foundation
 import PolicyCore
+import Virtualization
 
 enum AuthenticationStage: String, CaseIterable, Sendable {
     case navigate, resolve, fill, submit, verify, output
+    case challengeFill = "challenge_fill", challengeSubmit = "challenge_submit"
+    static let primary: [Self] = [.navigate, .resolve, .fill, .submit, .verify, .output]
 }
 
-enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnknown }
+enum BrowserAuthenticationResult: Sendable { case succeeded, failed(AgentAPIError), outcomeUnknown(AgentAPIError) }
 enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
 
 /// Implementations own their independent worker/egress deadlines. revoke()
 /// closes authority synchronously; VM destruction may finish asynchronously.
 @MainActor protocol ProtectedBrowserDriver: AnyObject {
-    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult
+    func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential, owner: @escaping @MainActor () async throws -> Void) async throws -> BrowserAuthenticationResult
+    var ownerMachine: VZVirtualMachine? { get }
     func renew(sequence: Int) async throws
     func checkLease() throws
     func perform(_ operation: String, arguments: [String: JSONValue]) async throws -> ProtectedBrowserResult
     func revoke()
 }
+
+extension ProtectedBrowserDriver { var ownerMachine: VZVirtualMachine? { nil } }
 
 /// One active protected browser in this release. Every action for that session
 /// passes this serial native authority boundary. No client supplies a selector,
@@ -38,6 +44,8 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
         var sequence = 0
         var operations = Set<String>()
         var actionBusy = false
+        var challengeStage = 0
+        var checkpoint: String?
         init(reference: String, operation: String, caller: EnrolledAgent, account: ConsentAccount, adapter: QualifiedAdapterPolicy, grant: String, driver: any ProtectedBrowserDriver) {
             self.reference = reference; self.operation = operation; self.caller = caller
             self.account = account; self.adapter = adapter; self.grant = grant; self.driver = driver
@@ -45,21 +53,25 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
         }
     }
     public var availableOperations: [String] { ["auth.login", "operation.get", "operation.cancel", "session.close", "browser.observe", "browser.extract", "browser.navigate", "browser.click"] }
+    public let challenges = OwnerChallengeCoordinator()
     private let access: AccessCoordinator
     private let journal: OperationJournal
-    private let resolve: @MainActor (ConsentAccount, String) async throws -> PrivateCredential
+    private let resolve: @MainActor (ConsentAccount, String, Bool) async throws -> PrivateCredential
     private let makeDriver: @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver
     private var active: Session?
     private var monitor: Task<Void, Never>?
     private var closed = false
 
-    init(access: AccessCoordinator, journal: OperationJournal, resolve: @escaping @MainActor (ConsentAccount, String) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver) {
+    init(access: AccessCoordinator, journal: OperationJournal, resolve: @escaping @MainActor (ConsentAccount, String, Bool) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver) {
         self.access = access; self.journal = journal; self.resolve = resolve; self.makeDriver = makeDriver
         let previous = access.onRevoke
         access.onRevoke = { [weak self] grant in
             // Close browser/egress before any callback can start teardown.
             if let self, let session = self.active, grant == nil || grant == session.grant { self.terminate(session, state: .cancelled) }
             previous?(grant)
+        }
+        challenges.onCancel = { [weak self] id in
+            if let self, let session = self.active, session.id == id { self.terminate(session, state: .cancelled) }
         }
         monitor = Task { [weak self] in
             while !Task.isCancelled {
@@ -99,6 +111,14 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
 
     public func status(_ reference: String, caller: EnrolledAgent) throws -> AgentOperationStatus {
         let status = try journal.status(reference, caller: caller)
+        if let session = active, reference == session.operation, session.caller == caller,
+           status.state == .needsOwnerAction, let checkpoint = session.checkpoint {
+            do {
+                challenges.expire()
+                try check(session)
+                return AgentOperationStatus(reference: reference, state: .needsOwnerAction, checkpoint: checkpoint)
+            } catch { terminate(session, state: .cancelled); return try journal.status(reference, caller: caller) }
+        }
         if let session = active, session.operations.contains(reference), session.caller == caller, session.ready, !session.actionBusy {
             do {
                 try check(session)
@@ -193,7 +213,14 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
 
     private func authorize(_ stage: AuthenticationStage, session: Session) throws {
         try check(session)
-        guard session.stage < AuthenticationStage.allCases.count, AuthenticationStage.allCases[session.stage] == stage,
+        if stage == .challengeFill || stage == .challengeSubmit {
+            guard session.stage == 4, session.checkpoint == nil, challengeSpec(session) != nil,
+                  (stage == .challengeFill && session.challengeStage == 0) || (stage == .challengeSubmit && session.challengeStage == 1) else { throw AgentAPIError.unsupportedChallenge }
+            session.challengeStage += 1
+            return
+        }
+        guard session.stage < AuthenticationStage.primary.count, AuthenticationStage.primary[session.stage] == stage,
+              session.challengeStage != 1, session.checkpoint == nil,
               stage != .fill || session.resolved else { throw AgentAPIError.unavailable }
         if stage == .submit { try journal.markSubmitted(session.operation, caller: session.caller) }
         session.stage += 1
@@ -205,7 +232,7 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
         // Reserve before awaiting the worker: even a faulty driver cannot race
         // two resolutions against the same selected account checkpoint.
         session.resolved = true
-        let credential = try await resolve(session.account, origin)
+        let credential = try await resolve(session.account, origin, challengeSpec(session) != nil)
         try check(session)
         return credential
     }
@@ -222,18 +249,25 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
             }, resolve: { [weak self] in
                 guard let self else { throw AgentAPIError.unavailable }
                 return try await self.credential(session)
+            }, owner: { [weak self] in
+                guard let self else { throw AgentAPIError.unavailable }
+                try await self.ownerChallenge(session)
             })
             try check(session)
-            if result == .succeeded {
-                guard session.stage == AuthenticationStage.allCases.count else { throw AgentAPIError.unavailable }
+            switch result {
+            case .succeeded:
+                guard session.stage == AuthenticationStage.primary.count else { throw AgentAPIError.unavailable }
                 try journal.finish(session.operation, caller: session.caller, state: .succeeded)
                 session.ready = true
                 session.task = nil
-            } else { terminate(session, state: result == .outcomeUnknown ? .outcomeUnknown : .failed) }
+            case .failed(let code): terminate(session, state: .failed, error: code)
+            case .outcomeUnknown(let code): terminate(session, state: .outcomeUnknown, error: code)
+            }
         } catch { terminate(session, state: .failed) }
     }
 
     private func renew() async {
+        challenges.expire()
         guard let session = active else { return }
         do {
             try check(session)
@@ -243,16 +277,17 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
         } catch { terminate(session, state: .cancelled) }
     }
 
-    private func terminate(_ session: Session, state: AgentOperationState) {
+    private func terminate(_ session: Session, state: AgentOperationState, error: AgentAPIError? = nil) {
         guard active === session else { return }
         active = nil
         session.driver.revoke()
+        challenges.cancel(session: session.id)
         session.task?.cancel(); session.task = nil
         do {
             for operation in session.operations {
                 let current = try journal.status(operation, caller: session.caller)
                 if [.running, .pendingOwner, .needsOwnerAction].contains(current.state) {
-                    try journal.finish(operation, caller: session.caller, state: state, error: state == .failed ? .unavailable : nil)
+                    try journal.finish(operation, caller: session.caller, state: state, error: error ?? (state == .failed ? .unavailable : nil))
                 }
             }
         } catch {
@@ -260,5 +295,38 @@ enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
             // action in this process. Restart reconciles the submitted flag.
             closed = true
         }
+    }
+
+    private func challengeSpec(_ session: Session) -> JSONValue? {
+        PackagedAdapters.manifests[session.adapter.id]?["login"]?["challenge"]
+    }
+
+    private func ownerChallenge(_ session: Session) async throws {
+        try check(session)
+        guard session.stage == 4, session.challengeStage == 0, session.checkpoint == nil,
+              let url = challengeSpec(session)?["url"]?.string,
+              let host = URLComponents(string: url)?.host,
+              session.adapter.credentialOrigins.contains("https://" + host) else { throw AgentAPIError.unsupportedChallenge }
+        session.challengeStage = 2
+        let checkpoint = try ReferenceRegistry.randomToken()
+        session.checkpoint = checkpoint
+        try journal.setOwnerAction(session.operation, caller: session.caller, waiting: true)
+        try await challenges.request(session: session.id, checkpoint: checkpoint, account: session.account.metadata.title,
+                                     caller: session.caller.displayName, origin: "https://" + host)
+        try check(session)
+        session.checkpoint = nil
+        try journal.setOwnerAction(session.operation, caller: session.caller, waiting: false)
+    }
+
+    public func ownerMachine(checkpoint: String) -> VZVirtualMachine? {
+        guard let session = active, session.checkpoint == checkpoint, challenges.pending?.id == checkpoint else { return nil }
+        do { try check(session); return session.driver.ownerMachine }
+        catch { terminate(session, state: .cancelled); return nil }
+    }
+
+    public func completeOwnerChallenge(_ checkpoint: String) throws {
+        guard let session = active, session.checkpoint == checkpoint else { throw AgentAPIError.invalidReference }
+        do { try check(session); try challenges.complete(checkpoint) }
+        catch { terminate(session, state: .cancelled); throw error }
     }
 }

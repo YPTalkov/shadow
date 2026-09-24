@@ -4,7 +4,11 @@ from pathlib import Path
 import sys
 
 root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root))
+from site_adapters.validation import validate
 manifests = [json.loads(path.read_text()) for path in sorted((root / "site_adapters").glob("*/manifest.json"))]
+for manifest in manifests:
+    validate(manifest)
 assert len({item["id"] for item in manifests}) == len(manifests)
 encoded = json.dumps({item["id"]: item for item in manifests}, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 delimiter = "#"

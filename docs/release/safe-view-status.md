@@ -33,7 +33,8 @@ generation checks. No Python lint or static type checker is configured.
 Supported actions are explicit. Arbitrary URLs, selectors, script execution,
 screenshots, downloads, raw DOM, headers, cookies and storage are absent from the
 agent result surface. Unknown routes or views close the session. Automated
-challenge completion and private owner interaction are not qualified yet.
+challenge completion and private owner interaction were subsequently exercised
+in the synthetic qualification described in [challenge-status.md](challenge-status.md).
 
 Known-value suppression is defense in depth. A malicious destination can encode
 or transform information in ways that no text filter can generally recognize.

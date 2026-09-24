@@ -62,7 +62,8 @@ class OutputGate:
             raise BrowserFailure(Code.OUTPUT_CLOSED)
 
     def close(self):
+        # Seal observations immediately. The controller still needs its live
+        # private channel to send one fixed terminal code before teardown.
         self.phase = Phase.CLOSED
         self._epoch += 1
         self._document = None
-        self.lease.revoke()

@@ -4,14 +4,14 @@ import os
 import signal
 import socket
 
-from .auth import AtomicAuthenticator, Credential
+from .auth import AtomicAuthenticator, Credential, LoginSpec
 from .control import ControlChannel
 from .egress import ConnectProxy
 from .errors import BrowserFailure, Code
 from .output_gate import OutputGate
 from .observations import Observations
 from .watchdog import Watchdog, WorkerLease
-from site_adapters import login_spec, manifest
+from site_adapters import manifest
 
 CHROMIUM_ARGUMENTS = [
     "--disable-breakpad", "--disable-crash-reporter", "--crash-dumps-dir=/opt/shadow/crashes",
@@ -41,8 +41,8 @@ async def run(channel: ControlChannel, lease: WorkerLease):
             command = await channel.receive()
             if set(command) != {"kind", "adapter_id"} or command["kind"] != "login":
                 raise BrowserFailure(Code.INVALID_REQUEST)
-            spec = login_spec(command["adapter_id"])
             adapter = manifest(command["adapter_id"])
+            spec = LoginSpec(**adapter["login"])
             protected_values = []
 
             async def authorize(stage):
@@ -59,9 +59,20 @@ async def run(channel: ControlChannel, lease: WorkerLease):
                 protected_values.extend(value for value in (credential.password, credential.totp) if value)
                 return credential
 
-            result = await AtomicAuthenticator(page, gate, spec).run(resolve, authorize)
-            await channel.send({"kind": "authentication", "state": result.state})
+            async def owner():
+                await channel.send({"kind": "owner_challenge"})
+                if await channel.receive(timeout=120) != {"kind": "owner_completed"}:
+                    raise BrowserFailure(Code.INVALID_REQUEST)
+
+            result = await AtomicAuthenticator(page, gate, spec).run(resolve, authorize, owner=owner, protect=protected_values.append)
+            public_codes = {"unsupported_challenge", "unsupported_view", "document_changed", "authentication_failed", "session_closed", "outcome_unknown"}
+            code = None if result.state == "succeeded" else (result.code if result.code in public_codes else "unavailable")
+            await channel.send({"kind": "authentication", "state": result.state, "code": code})
             if result.state != "succeeded":
+                # Keep the VM alive long enough for native code to commit the
+                # terminal receipt and close the channel. The browser context
+                # and output gate are already closed; no further work is read.
+                await channel.receive(timeout=5)
                 return
             observations = Observations(page, gate, adapter, protected_values)
             while True:
@@ -89,9 +100,11 @@ async def run(channel: ControlChannel, lease: WorkerLease):
                 except BrowserFailure as error:
                     # Fixed code only, then destroy the unsupported session.
                     await channel.send({"kind": "error", "code": error.code.value})
+                    await channel.receive(timeout=5)
                     return
     finally:
         gate.close()
+        lease.revoke()
         proxy.close()
         watchdog.stop()
 

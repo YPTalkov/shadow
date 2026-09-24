@@ -4,6 +4,12 @@ import PolicyCore
 import RuntimeHost
 import Security
 import Darwin
+import AppKit
+import SwiftUI
+import Virtualization
+import CryptoKit
+import OwnerUI
+import QuartzCore
 
 /// Synthetic-only end-to-end use of the native authority and production driver.
 @MainActor enum SessionProbe {
@@ -11,6 +17,9 @@ import Darwin
         guard CommandLine.arguments.count == 8, let rootPath = ProcessInfo.processInfo.environment["SHADOW_PROBE_ROOT"],
               let port = ProcessInfo.processInfo.environment["SHADOW_FIXTURE_PORT"].flatMap(UInt16.init) else { throw AgentAPIError.unavailable }
         let args = CommandLine.arguments
+        let flow = ProcessInfo.processInfo.environment["SHADOW_PROBE_FLOW"] ?? ""
+        let adapterID = flow == "sso" ? "synthetic-sso-v1" : "synthetic-v1"
+        let credentialOrigin = flow == "sso" ? "https://auth.shadow.test" : "https://app.shadow.test"
         let image = BrowserVMImage(kernel: URL(fileURLWithPath: args[2]), ramdisk: URL(fileURLWithPath: args[3]), disk: URL(fileURLWithPath: args[4]), identity: VMImageIdentity(kernelSHA256: args[5], ramdiskSHA256: args[6], imageSHA256: args[7]))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-session-probe-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -24,15 +33,18 @@ import Darwin
         do {
             try await worker.create(password: "synthetic-master-canary")
             let csv = directory.appendingPathComponent("fixture.csv")
-            try Data("Title,URL,Username,Password\nSynthetic,https://app.shadow.test,synthetic-user,synthetic-atomic-auth-canary\n".utf8).write(to: csv)
-            _ = try await worker.previewCSV(path: csv, mapping: OwnerCSVMapping(title: "Title", url: "URL", username: "Username", password: "Password"))
+            let seed = ["totp", "sso", "unsupported"].contains(flow) ? "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" : ""
+            try Data("Title,URL,Username,Password,TOTP\nSynthetic,\(credentialOrigin),synthetic-user,synthetic-atomic-auth-canary,\(seed)\n".utf8).write(to: csv)
+            var mapping = OwnerCSVMapping(title: "Title", url: "URL", username: "Username", password: "Password")
+            mapping.totp = "TOTP"
+            _ = try await worker.previewCSV(path: csv, mapping: mapping)
             _ = try await worker.commitCSV(operationID: UUID(), validRowsOnly: false)
             guard let item = try await worker.catalog().items.first, let accountID = UUID(uuidString: item.id) else { throw AgentAPIError.unavailable }
             access.openVault(accounts: [ConsentAccount(metadata: item, policy: AccountPolicy(id: accountID, revision: item.revision, source: .local, presence: .present, lastObserved: nil, restrictionEvent: nil))])
             let caller = EnrolledAgent(id: UUID(), boot: UUID(), displayName: "Synthetic VM client")
             access.enroll(caller)
             let actions: Set<ProtectedAction> = [.login, .observe, .extract, .navigate, .click]
-            access.installQualifiedAdapter(QualifiedAdapterPolicy(id: "synthetic-v1", credentialOrigins: ["https://app.shadow.test"], resourceOrigins: ["https://app.shadow.test"], actions: actions))
+            access.installQualifiedAdapter(QualifiedAdapterPolicy(id: adapterID, credentialOrigins: [credentialOrigin], resourceOrigins: ["https://app.shadow.test"], actions: actions))
             let service = ProtectedSessionService(access: access, journal: try OperationJournal(path: directory.appendingPathComponent("operations.sqlite")), worker: worker, image: image) { descriptor, channel, authorize in
                 try FixtureTunnel.run(guest: descriptor, port: port, transport: channel, authorize: authorize)
             }
@@ -41,7 +53,7 @@ import Darwin
             let disclosure = try access.requestCatalog(caller: caller, requestID: UUID())
             try access.approveCatalog(disclosure.requestRef, selected: [accountID], duration: 300)
             let reference = try access.accountReference(accountID, caller: caller)
-            let use = try access.requestUse(caller: caller, requestID: UUID(), accountRef: reference, adapterID: "synthetic-v1", actions: actions)
+            let use = try access.requestUse(caller: caller, requestID: UUID(), accountRef: reference, adapterID: adapterID, actions: actions)
             try access.approveUse(use.requestRef, duration: 300, approveRetained: false)
             guard let grant = try access.status(use.requestRef, caller: caller).grantRef else { throw AgentAPIError.unavailable }
             func call(_ operation: String, _ arguments: [String: JSONValue], id: UUID = UUID()) async throws -> JSONValue {
@@ -50,7 +62,7 @@ import Darwin
                 guard let result = reply["result"] else { throw AgentAPIError.unavailable }
                 return result
             }
-            let loginID = UUID(), arguments: [String: JSONValue] = ["account_ref": .string(reference), "grant_ref": .string(grant), "adapter_id": .string("synthetic-v1")]
+            let loginID = UUID(), arguments: [String: JSONValue] = ["account_ref": .string(reference), "grant_ref": .string(grant), "adapter_id": .string(adapterID)]
             let interruption = ProcessInfo.processInfo.environment["SHADOW_PROBE_INTERRUPT"] ?? ""
             signal(SIGUSR1, SIG_IGN)
             let revokeSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
@@ -61,9 +73,29 @@ import Darwin
             guard let operation = initial["operation_ref"]?.string else { throw AgentAPIError.unavailable }
             let started = DeadlineClock.now
             var status = initial
-            while status["state"]?.string == "running", DeadlineClock.now - started < 50 {
+            var waitingSince: TimeInterval?
+            while ["running", "needs_owner_action"].contains(status["state"]?.string ?? ""), DeadlineClock.now - started < (flow == "owner_timeout" ? 150 : 50) {
+                if status["state"]?.string == "needs_owner_action" {
+                    waitingSince = waitingSince ?? DeadlineClock.now
+                    guard ["owner", "owner_cancel", "owner_timeout"].contains(flow), let checkpoint = status["checkpoint_ref"]?.string,
+                          status["session_ref"] == .null else { throw AgentAPIError.unavailable }
+                    if flow == "owner_cancel" { service.challenges.cancel(checkpoint) }
+                    else if flow == "owner" { try await completeChallenge(service, checkpoint: checkpoint) }
+                }
                 try await Task.sleep(for: .milliseconds(500))
                 status = try await call("operation.get", ["operation_ref": .string(operation)])
+            }
+            if ["unsupported", "owner_cancel", "owner_timeout"].contains(flow) {
+                guard status["state"]?.string == "outcome_unknown", status["session_ref"] == .null,
+                      try await call("auth.login", arguments, id: loginID) == status,
+                      flow != "unsupported" || status["code"]?.string == "unsupported_challenge" else { throw AgentAPIError.unavailable }
+                print("BROWSER_NATIVE_CHALLENGE=pass")
+                if flow == "owner_timeout" {
+                    guard let waitingSince, (119...123).contains(DeadlineClock.now - waitingSince), service.challenges.pending == nil else { throw AgentAPIError.unavailable }
+                    print("BROWSER_OWNER_TIMEOUT_MS=\(Int((DeadlineClock.now - waitingSince) * 1000))")
+                }
+                await worker.lock()
+                return
             }
             if interruption == "revoke" {
                 guard status["state"]?.string == "outcome_unknown", status["session_ref"] == .null,
@@ -112,5 +144,59 @@ import Darwin
             await worker.lock()
             throw error
         }
+    }
+
+    private static func completeChallenge(_ service: ProtectedSessionService, checkpoint: String) async throws {
+        guard let challenge = service.challenges.pending, challenge.id == checkpoint else { throw AgentAPIError.unavailable }
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 760), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        window.title = "Shadow — Synthetic challenge qualification"
+        let host = NSHostingView(rootView: PrivateBrowserView(service: service, challenge: challenge))
+        host.sizingOptions = []
+        window.contentView = host
+        window.setContentSize(NSSize(width: 980, height: 760))
+        window.center(); window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .seconds(1))
+        func find(_ view: NSView) -> VZVirtualMachineView? {
+            if let display = view as? VZVirtualMachineView { return display }
+            return view.subviews.compactMap(find).first
+        }
+        guard let display = find(host) else { throw AgentAPIError.unavailable }
+        host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+        CATransaction.flush()
+        if let root = ProcessInfo.processInfo.environment["SHADOW_PROBE_ROOT"],
+           let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            window.appearance?.performAsCurrentDrawingAppearance { host.cacheDisplay(in: host.bounds, to: bitmap) }
+            let evidence = URL(fileURLWithPath: root).appendingPathComponent(".build/evidence")
+            try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+            if let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) {
+                try jpeg.write(to: evidence.appendingPathComponent("owner-challenge.jpg"))
+            }
+        }
+        window.makeFirstResponder(display)
+        var counter = UInt64(Date().timeIntervalSince1970 / 30).bigEndian
+        let digest = withUnsafeBytes(of: &counter) { bytes in
+            Array(HMAC<Insecure.SHA1>.authenticationCode(for: Data(bytes), using: SymmetricKey(data: Data("12345678901234567890".utf8))))
+        }
+        let offset = Int(digest.last! & 15)
+        let value = digest[offset..<offset + 4].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) } & 0x7fff_ffff
+        let code = String(format: "%06u", value % 1_000_000)
+        let keyCodes: [Character: UInt16] = ["0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "\r": 36]
+        for character in code + "\r" {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                  windowNumber: window.windowNumber, context: nil, characters: String(character), charactersIgnoringModifiers: String(character),
+                                                  isARepeat: false, keyCode: keyCodes[character]!) else { throw AgentAPIError.unavailable }
+                if type == .keyDown { display.keyDown(with: event) } else { display.keyUp(with: event) }
+            }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        try await Task.sleep(for: .seconds(2))
+        try service.completeOwnerChallenge(checkpoint)
+        print("BROWSER_NATIVE_OWNER_INPUT=pass")
     }
 }

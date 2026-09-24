@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import BrokerHost
 
 public enum OwnerConfigurationError: Error {
     case unavailable
@@ -12,11 +13,13 @@ public final class OwnerConfiguration {
     public let vaultDirectory: URL
     public let vaultID: String
     public let python: URL
+    public let browserImage: BrowserVMImage?
     private let lock: FileHandle
 
-    public init(root: URL, python: URL) throws {
+    public init(root: URL, python: URL, browserImage: BrowserVMImage? = nil) throws {
         self.root = root
         self.python = python
+        self.browserImage = browserImage
         vaultDirectory = root.appendingPathComponent("vault", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var info = stat()
@@ -61,10 +64,12 @@ public final class OwnerConfiguration {
         #if DEBUG
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let python = source.appendingPathComponent(".venv/bin/python")
+        let browserImage = try? BrowserVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/browser"))
         #else
         guard let resources = Bundle.main.resourceURL else { throw OwnerConfigurationError.unavailable }
         let python = resources.appendingPathComponent("python/bin/python3")
+        let browserImage = try BrowserVMImage.packaged(at: resources.appendingPathComponent("browser"))
         #endif
-        return try OwnerConfiguration(root: root, python: python)
+        return try OwnerConfiguration(root: root, python: python, browserImage: browserImage)
     }
 }

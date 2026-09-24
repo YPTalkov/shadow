@@ -25,6 +25,8 @@ private func loginRequest(id: UUID = UUID(), reference: String = String(repeatin
     #expect(!duplicate.created && duplicate.status.reference == started.status.reference)
     #expect(throws: ConsentError.requestConflict) { _ = try journal.begin(loginRequest(id: request.id, reference: String(repeating: "c", count: 64)), caller: caller) }
     try journal.markSubmitted(started.status.reference, caller: caller)
+    try journal.setOwnerAction(started.status.reference, caller: caller, waiting: true)
+    #expect(try journal.status(started.status.reference, caller: caller).state == .needsOwnerAction)
     try journal.close()
     let reopened = try OperationJournal(path: file)
     defer { try? reopened.close() }

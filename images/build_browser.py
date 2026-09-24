@@ -211,6 +211,7 @@ def main() -> None:
                         "shadow/boot_probe.py": (ROOT / "images/browser-boot-probe.py").read_bytes(),
                         "shadow/browser_scenarios.py": (ROOT / "tests/browser/guest_scenarios.py").read_bytes()})
         payload["shadow/guest_safe_views.py"] = (ROOT / "tests/browser/guest_safe_views.py").read_bytes()
+        payload["shadow/guest_challenges.py"] = (ROOT / "tests/browser/guest_challenges.py").read_bytes()
     if arguments.profile == "qualification":
         payload["shadow/runtime_qualification.py"] = (ROOT / "images/browser-runtime-qualification.py").read_bytes()
     if arguments.profile != "runtime":
@@ -235,7 +236,7 @@ def main() -> None:
     for name in ("kernel", "initrd", "disk"):
         with (CACHE / (initrd_name if name == "initrd" else name)).open("rb") as source:
             manifest["files"][name] = hashlib.file_digest(source, "sha256").hexdigest()
-    manifest_name = "runtime-manifest.json" if arguments.profile == "probe" else arguments.profile + "-manifest.json"
+    manifest_name = "production-manifest.json" if arguments.profile == "runtime" else ("runtime-manifest.json" if arguments.profile == "probe" else "qualification-manifest.json")
     (CACHE / manifest_name).write_text(json.dumps(manifest, indent=2) + "\n")
     print("browser_image_built")
 
