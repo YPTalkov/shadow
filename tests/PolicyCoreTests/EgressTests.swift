@@ -45,7 +45,10 @@ import PolicyCore
     let destination = try HTTPSDestination(host: "example.com", port: 443)
     let lease = EgressLease(instance: "vm", boot: "boot", session: "session", destinations: [destination], expiresAt: DeadlineClock.now + 10)
     let guestFD = guest[1], hostFD = host[0]
+    let (started, signalStarted) = AsyncStream<Void>.makeStream()
     let task = Task.detached {
+        signalStarted.yield()
+        signalStarted.finish()
         do {
             try Gateway.forward(guest: guestFD, host: hostFD) {
                 try lease.check(instance: "vm", boot: "boot", session: "session", destination: destination)
@@ -54,16 +57,25 @@ import PolicyCore
         catch { return (denied: false, stoppedAt: DeadlineClock.now) }
         return (denied: false, stoppedAt: DeadlineClock.now)
     }
+    // Fixture startup is not the revocation interval. Let the forwarding task
+    // start before blocking a cooperative worker in the socket handshake.
+    for await _ in started {}
     let guestHandle = FileHandle(fileDescriptor: guest[0], closeOnDealloc: false)
     let hostHandle = FileHandle(fileDescriptor: host[1], closeOnDealloc: false)
-    try guestHandle.write(contentsOf: Data("synthetic-request".utf8))
-    var ready = pollfd(fd: host[1], events: Int16(POLLIN), revents: 0)
-    try #require(poll(&ready, 1, 1000) > 0)
-    #expect(try hostHandle.read(upToCount: 17) == Data("synthetic-request".utf8))
-    try hostHandle.write(contentsOf: Data("synthetic-response".utf8))
-    ready = pollfd(fd: guest[0], events: Int16(POLLIN), revents: 0)
-    try #require(poll(&ready, 1, 1000) > 0)
-    #expect(try guestHandle.read(upToCount: 18) == Data("synthetic-response".utf8))
+    do {
+        try guestHandle.write(contentsOf: Data("synthetic-request".utf8))
+        var ready = pollfd(fd: host[1], events: Int16(POLLIN), revents: 0)
+        try #require(poll(&ready, 1, 1000) > 0)
+        #expect(try hostHandle.read(upToCount: 17) == Data("synthetic-request".utf8))
+        try hostHandle.write(contentsOf: Data("synthetic-response".utf8))
+        ready = pollfd(fd: guest[0], events: Int16(POLLIN), revents: 0)
+        try #require(poll(&ready, 1, 1000) > 0)
+        #expect(try guestHandle.read(upToCount: 18) == Data("synthetic-response".utf8))
+    } catch {
+        lease.revoke()
+        _ = await task.value
+        throw error
+    }
     let revokedAt = DeadlineClock.now
     lease.revoke()
     let result = await task.value
@@ -73,7 +85,7 @@ import PolicyCore
     #expect(result.stoppedAt >= revokedAt)
     #expect(result.stoppedAt - revokedAt < 1)
     try guestHandle.write(contentsOf: Data("after-revocation".utf8))
-    ready = pollfd(fd: host[1], events: Int16(POLLIN), revents: 0)
+    var ready = pollfd(fd: host[1], events: Int16(POLLIN), revents: 0)
     #expect(poll(&ready, 1, 100) == 0)
 }
 
