@@ -161,7 +161,12 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
 }
 
 let probe = Probe()
-if CommandLine.arguments.dropFirst().first == "browser-session" {
+if CommandLine.arguments.dropFirst().first == "agent-runtime" {
+    Task { @MainActor in
+        do { try await AgentRuntimeProbe.run(); print("AGENT_RUNTIME=pass"); exit(0) }
+        catch { print("AGENT_RUNTIME=failed"); exit(1) }
+    }
+} else if CommandLine.arguments.dropFirst().first == "browser-session" {
     Task { @MainActor in
         do { try await SessionProbe.run(); print("BROWSER_SESSION=pass"); exit(0) }
         catch { print("BROWSER_SESSION=failed"); exit(1) }

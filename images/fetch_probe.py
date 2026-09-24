@@ -18,6 +18,11 @@ FIXED = [
         "url": "https://github.com/openai/codex/releases/download/rust-v0.156.1/codex-aarch64-unknown-linux-musl.tar.gz",
         "sha256": "558e12aaa6dacb335ec47240bf9721db8a54746806d64f01185a403f44f79b72",
     },
+    {
+        "filename": "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.156.1/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "40198138b03798ffa8c0da4c827a8ca5896774ea104b7110c2a2c0c7560cbe94",
+    },
 ]
 
 

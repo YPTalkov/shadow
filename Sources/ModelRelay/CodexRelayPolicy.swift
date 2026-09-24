@@ -27,21 +27,24 @@ public struct CodexRelayPolicy: Sendable {
     public static let maximumRequestBytes = 4 * 1024 * 1024
     private let models: Set<String>
     private let fields: Set<String> = ["model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "reasoning", "include", "text", "service_tier", "prompt_cache_key", "stream", "store", "client_metadata"]
-    private let allowedHeaders: Set<String> = ["content-type", "accept", "user-agent", "session_id", "session-id", "thread-id", "x-client-request-id", "x-codex-turn-metadata", "x-codex-beta-features", "x-codex-window-id", "openai-beta", "originator"]
+    private let allowedHeaders: Set<String> = ["content-type", "accept", "user-agent", "session_id", "session-id", "thread-id", "x-client-request-id", "x-codex-turn-metadata", "x-codex-beta-features", "x-codex-window-id", "openai-beta", "originator", "x-openai-internal-codex-responses-lite"]
 
     public init(models: Set<String>) {
         self.models = models
     }
 
     public func request(method: String, path: String, headers: [String: String], body: Data, credential: CodexCredential, now: Date = Date()) throws -> URLRequest {
+        let liteHeader = headers.first { $0.key.lowercased() == "x-openai-internal-codex-responses-lite" }?.value
+        let lite = liteHeader == "true"
         guard method == "POST", path == "/v1/responses", body.count <= Self.maximumRequestBytes,
-              headers.count <= 24,
+              headers.count <= 24, Set(headers.keys.map { $0.lowercased() }).count == headers.count,
+              liteHeader == nil || lite,
               headers.allSatisfy({ allowedHeaders.contains($0.key.lowercased()) && $0.value.utf8.count <= 4096 && !$0.value.contains("\r") && !$0.value.contains("\n") }),
               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               Set(json.keys).isSubset(of: fields),
               let model = json["model"] as? String, models.contains(model),
-              let instructions = json["instructions"] as? String, instructions.utf8.count <= 1024 * 1024,
-              json["input"] is [Any],
+              (json["instructions"] == nil && lite) || (json["instructions"] as? String).map({ $0.utf8.count <= 1024 * 1024 }) == true,
+              RelayInputPolicy.accepts(json),
               let stream = json["stream"] as? NSNumber, CFGetTypeID(stream) == CFBooleanGetTypeID(), stream.boolValue,
               let store = json["store"] as? NSNumber, CFGetTypeID(store) == CFBooleanGetTypeID(), !store.boolValue else {
             throw RelayError.invalidRequest
@@ -61,6 +64,7 @@ public struct CodexRelayPolicy: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("responses=experimental", forHTTPHeaderField: "OpenAI-Beta")
+        if lite { request.setValue("true", forHTTPHeaderField: "x-openai-internal-codex-responses-lite") }
         request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
         request.setValue("shadow/0.1", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 120

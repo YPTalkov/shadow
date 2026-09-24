@@ -43,7 +43,7 @@ Task { @MainActor in
     var stage = "open"
     do {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
-        let configuration = try OwnerConfiguration(root: root, python: source.appendingPathComponent(".venv/bin/python"))
+        let configuration = try OwnerConfiguration(root: root, python: source.appendingPathComponent(".venv/bin/python"), agentImage: AgentVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/agent")))
         config = configuration
         let owner = OwnerVaultModel(configuration: configuration)
         model = owner

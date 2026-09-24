@@ -1,5 +1,6 @@
 """Build a synthetic Linux boot probe from the pinned official Alpine archive."""
 
+import argparse
 import gzip
 import hashlib
 import json
@@ -13,7 +14,6 @@ RELEASE = "alpine-netboot-3.22.6-aarch64.tar.gz"
 SHA256 = "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728"
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".build/guest-cache"
-OUTPUT = CACHE / "probe"
 
 
 def cpio_file(name: str, contents: bytes, mode: int) -> bytes:
@@ -27,11 +27,15 @@ def cpio_file(name: str, contents: bytes, mode: int) -> bytes:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", choices=("probe", "agent"), default="probe")
+    profile = parser.parse_args().profile
+    output = CACHE / profile
     archive = CACHE / RELEASE
     with archive.open("rb") as source:
         if hashlib.file_digest(source, "sha256").hexdigest() != SHA256:
             raise SystemExit("release_hash_mismatch")
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "r:gz") as tar:
         kernel = tar.extractfile("boot/vmlinuz-virt").read()
         ramdisk = tar.extractfile("boot/initramfs-virt").read()
@@ -43,12 +47,11 @@ def main() -> None:
         kernel = gzip.decompress(kernel[offset : offset + size])
     elif kernel.startswith(b"\x1f\x8b"):
         kernel = gzip.decompress(kernel)
-    init = (ROOT / "images/probe-init.sh").read_bytes()
+    init = (ROOT / f"images/{profile}-init.sh").read_bytes()
     overlay = cpio_file("init", init, stat.S_IFREG | 0o755)
-    overlay += cpio_file("probe-boundary.py", (ROOT / "images/probe-boundary.py").read_bytes(), stat.S_IFREG | 0o644)
-    overlay += cpio_file("probe-codex.py", (ROOT / "images/probe-codex.py").read_bytes(), stat.S_IFREG | 0o644)
-    overlay += cpio_file("probe-egress.py", (ROOT / "images/probe-egress.py").read_bytes(), stat.S_IFREG | 0o644)
-    overlay += cpio_file("probe-agent-api.py", (ROOT / "images/probe-agent-api.py").read_bytes(), stat.S_IFREG | 0o644)
+    if profile == "probe":
+        for name in ("probe-boundary.py", "probe-codex.py", "probe-egress.py", "probe-agent-api.py"):
+            overlay += cpio_file(name, (ROOT / "images" / name).read_bytes(), stat.S_IFREG | 0o644)
     overlay += cpio_file("agent_tools", b"", stat.S_IFDIR | 0o755)
     for source in sorted((ROOT / "agent_tools").iterdir()):
         if source.suffix in {".py", ".json"}:
@@ -93,16 +96,22 @@ def main() -> None:
     with tarfile.open(codex_archive) as tar:
         codex = tar.extractfile("codex-aarch64-unknown-linux-musl").read()
     overlay += cpio_file("usr/bin/codex", codex, stat.S_IFREG | 0o755)
+    host_archive = CACHE / "codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+    if hashlib.sha256(host_archive.read_bytes()).hexdigest() != "40198138b03798ffa8c0da4c827a8ca5896774ea104b7110c2a2c0c7560cbe94":
+        raise SystemExit("codex_host_hash_mismatch")
+    with tarfile.open(host_archive) as tar:
+        code_host = tar.extractfile("codex-code-mode-host-aarch64-unknown-linux-musl").read()
+    overlay += cpio_file("usr/bin/codex-code-mode-host", code_host, stat.S_IFREG | 0o755)
     overlay += cpio_file("TRAILER!!!", b"", 0)
     # Linux accepts concatenated compressed/uncompressed initramfs archives.
     ramdisk += gzip.compress(overlay, mtime=0)
     files = {"kernel": kernel, "initrd": ramdisk, "disk": bytes(4096)}
-    manifest = {"release": RELEASE, "release_sha256": SHA256, "files": {}}
+    manifest = {"profile": profile, "release": RELEASE, "release_sha256": SHA256, "files": {}}
     for name, contents in files.items():
-        (OUTPUT / name).write_bytes(contents)
+        (output / name).write_bytes(contents)
         manifest["files"][name] = hashlib.sha256(contents).hexdigest()
-    (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print("synthetic_probe_image_built")
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(profile + "_image_built")
 
 
 if __name__ == "__main__":

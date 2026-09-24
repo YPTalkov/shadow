@@ -64,6 +64,7 @@ public struct OwnerPanel: View {
                     case .access:
                         VStack(spacing: 0) {
                             ModelSignInView(owner: model)
+                            AgentTaskView(owner: model)
                             Divider()
                             AgentAccessView(access: model.access)
                         }

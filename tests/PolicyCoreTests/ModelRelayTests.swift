@@ -45,6 +45,39 @@ private let requestBody = Data(#"{"model":"qualified-model","instructions":"Synt
     #expect(try (JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any])["client_metadata"] == nil)
 }
 
+@Test func relayAcceptsCodexResponsesLiteOnlyWithItsFixedHeader() throws {
+    let policy = CodexRelayPolicy(models: ["gpt-6-sol"])
+    let body = Data(#"{"model":"gpt-6-sol","input":[{"type":"additional_tools","role":"developer","tools":[]}],"stream":true,"store":false}"#.utf8)
+    let header = "x-openai-internal-codex-responses-lite"
+    let request = try policy.request(method: "POST", path: "/v1/responses", headers: [header: "true"], body: body, credential: credential, now: Date(timeIntervalSince1970: 1000))
+    #expect(request.value(forHTTPHeaderField: header) == "true")
+    for headers in [[:], [header: "false"], [header: "true", header.uppercased(): "false"]] {
+        #expect(throws: RelayError.invalidRequest) {
+            _ = try policy.request(method: "POST", path: "/v1/responses", headers: headers, body: body, credential: credential, now: Date(timeIntervalSince1970: 1000))
+        }
+    }
+}
+
+@Test func relayRejectsHostedToolsAndProviderFetches() throws {
+    let policy = CodexRelayPolicy(models: ["qualified-model"])
+    let base = try JSONSerialization.jsonObject(with: requestBody) as! [String: Any]
+    let remoteTool: [String: Any] = ["type": "mcp", "server_label": "remote", "server_url": "https://elsewhere.invalid"]
+    let cases: [[String: Any]] = [
+        ["tools": [remoteTool]],
+        ["tools": [["type": "web_search"]]],
+        ["tools": [["type": "namespace", "name": "hidden", "tools": [remoteTool]]]],
+        ["input": [["type": "additional_tools", "role": "developer", "tools": [remoteTool]]]],
+        ["input": [["type": "message", "role": "user", "content": [["type": "input_image", "image_url": "https://elsewhere.invalid/canary"]]]]],
+        ["input": [["type": "function_call_output", "call_id": "call", "output": [["type": "input_file", "file_url": "https://elsewhere.invalid/canary"]]]]],
+    ]
+    for update in cases {
+        let bytes = try JSONSerialization.data(withJSONObject: base.merging(update) { _, new in new })
+        #expect(throws: RelayError.invalidRequest) {
+            _ = try policy.request(method: "POST", path: "/v1/responses", headers: [:], body: bytes, credential: credential, now: Date(timeIntervalSince1970: 1000))
+        }
+    }
+}
+
 @Test func relayLeaseCannotBeReusedByAnotherBootOrAfterItsBudget() async throws {
     let lease = RelayLease(instance: "host-created-instance", boot: "boot-one", expiresAt: 200, maximumRequests: 2, maximumInputBytes: 100)
     #expect(throws: RelayError.denied) { try lease.reserve(instance: "other", boot: "boot-one", bytes: 1, now: 100) }

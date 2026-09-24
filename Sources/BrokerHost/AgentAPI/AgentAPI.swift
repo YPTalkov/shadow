@@ -90,14 +90,18 @@ public enum AgentDomainResult: Sendable {
         cursors.removeAll()
     }
 
-    public func serve(_ channel: FramedChannel, caller: EnrolledAgent) async {
+    public func serve(_ channel: FramedChannel, caller: EnrolledAgent, request initialRequest: Data? = nil, authorize: (() throws -> Void)? = nil) async {
         guard access.agents.contains(caller), channels.count < 8 else { channel.invalidate(); return }
         let id = UUID(); channels[id] = channel
         defer { channel.invalidate(); channels.removeValue(forKey: id) }
         do {
-            let request = try await Task.detached { try channel.read() }.value
+            let request: Data
+            if let initialRequest { request = initialRequest }
+            else { request = try await Task.detached { try channel.read() }.value }
+            try authorize?()
             let reply = await handle(request, caller: caller)
             guard channels[id] != nil, access.agents.contains(caller) else { return }
+            try authorize?()
             try await Task.detached { try channel.write(reply) }.value
         } catch { /* Fixed transport close; no request or exception logging. */ }
     }

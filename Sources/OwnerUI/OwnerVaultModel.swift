@@ -10,6 +10,7 @@ public final class OwnerVaultModel {
     public let access = AccessCoordinator()
     public let agentAPI: AgentAPI
     public let modelSignIn: ModelSignInModel
+    public private(set) var agentRuntime: AgentRuntime?
     public private(set) var protectedSessions: ProtectedSessionService?
     private var operationJournal: OperationJournal?
     public private(set) var diagnostics: DiagnosticReport?
@@ -51,6 +52,9 @@ public final class OwnerVaultModel {
         lastInteraction = clock()
         lastMaintenance = clock()
         agentAPI = AgentAPI(access: access)
+        if let image = configuration.agentImage {
+            agentRuntime = AgentRuntime(image: image, access: access, api: agentAPI, authentication: modelSignIn.authentication)
+        }
         access.onAudit = { [weak self] code in self?.record(code) }
         for adapter in QualifiedAdapterPolicy.packaged { access.installQualifiedAdapter(adapter) }
         do {
@@ -137,6 +141,12 @@ public final class OwnerVaultModel {
     public func signOutModel() {
         lockImmediately()
         Task { await modelSignIn.signOut() }
+    }
+
+    public func startAgent(prompt: String, model: String, maximumRequests: Int) async {
+        guard unlocked, !busy, diagnosticsAvailable, modelSignIn.phase == .signedIn else { return }
+        noteInteraction()
+        await agentRuntime?.start(prompt: prompt, model: model, maximumRequests: maximumRequests)
     }
 
     /// Revoke on the event's current MainActor turn, before scheduling teardown.

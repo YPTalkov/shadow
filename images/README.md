@@ -18,4 +18,10 @@ Alpine's kernel is an EFI zboot wrapper. The builder extracts its gzip payload u
 
 The Codex fixture routes guest loopback HTTP through the guest's model-only vsock channel, validates the request with the host Codex relay policy, then streams a synthetic shell tool call and final result. No provider credentials are needed for this test. Live subscription sign-in, browser automation, independent watchdogs, leased HTTPS egress, attack scenarios beyond these probes, dependency audit and packaged production qualification remain separate gates.
 
-The headed Chromium runtime uses a separate pinned Ubuntu image because Playwright does not support musl. Its image builder, real VM authentication checks and current limitations are documented in [browser runtime qualification](../docs/release/browser-runtime-status.md). Both image builders produce synthetic qualification artifacts; neither is the finished production package.
+The headed Chromium runtime uses a separate pinned Ubuntu image because Playwright does not support musl. Its image builder, real VM authentication checks and current limitations are documented in [browser runtime qualification](../docs/release/browser-runtime-status.md). Image qualification does not establish that the finished application package is ready.
+
+## Production Codex task image
+
+After fetching the inputs, run `uv run --frozen python -m images.build_probe --profile agent`. This writes `.build/guest-cache/agent/manifest.json` and hash-pinned boot files. The agent profile contains the task runner rather than the synthetic boot scripts. Codex's matching `codex-code-mode-host` executable is included for GPT-6 code tools. Guest home and task files remain in memory; the native supervisor discards console output.
+
+Run `uv run --frozen python scripts/run-agent-probe.py` with the signed probe executable above to test all selectable models using synthetic responses and the real Linux client. See [native runtime qualification](../docs/release/agent-runtime-status.md) for the limits and remaining live-provider gate.

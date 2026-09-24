@@ -14,12 +14,14 @@ public final class OwnerConfiguration {
     public let vaultID: String
     public let python: URL
     public let browserImage: BrowserVMImage?
+    public let agentImage: AgentVMImage?
     private let lock: FileHandle
 
-    public init(root: URL, python: URL, browserImage: BrowserVMImage? = nil) throws {
+    public init(root: URL, python: URL, browserImage: BrowserVMImage? = nil, agentImage: AgentVMImage? = nil) throws {
         self.root = root
         self.python = python
         self.browserImage = browserImage
+        self.agentImage = agentImage
         vaultDirectory = root.appendingPathComponent("vault", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var info = stat()
@@ -65,11 +67,13 @@ public final class OwnerConfiguration {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let python = source.appendingPathComponent(".venv/bin/python")
         let browserImage = try? BrowserVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/browser"))
+        let agentImage = try? AgentVMImage.packaged(at: source.appendingPathComponent(".build/guest-cache/agent"))
         #else
         guard let resources = Bundle.main.resourceURL else { throw OwnerConfigurationError.unavailable }
         let python = resources.appendingPathComponent("python/bin/python3")
         let browserImage = try BrowserVMImage.packaged(at: resources.appendingPathComponent("browser"))
+        let agentImage = try AgentVMImage.packaged(at: resources.appendingPathComponent("agent"))
         #endif
-        return try OwnerConfiguration(root: root, python: python, browserImage: browserImage)
+        return try OwnerConfiguration(root: root, python: python, browserImage: browserImage, agentImage: agentImage)
     }
 }
