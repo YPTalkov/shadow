@@ -102,6 +102,13 @@ public struct OwnerEditorResult: Codable, Sendable {
     public let lateChange: Bool
 }
 
+private final class WorkerTermination: @unchecked Sendable {
+    private let mutex = NSLock()
+    private var expected = false
+    func expectExit() { mutex.withLock { expected = true } }
+    func unexpectedExit() -> Bool { mutex.withLock { !expected } }
+}
+
 public actor PrivateVaultWorker {
     private let process: Process
     private let transport: FramedChannel
@@ -112,8 +119,11 @@ public actor PrivateVaultWorker {
     private var sequence = 0
     private var busy = false
     private var closed = false
+    private let termination = WorkerTermination()
+    public nonisolated var isRunning: Bool { process.isRunning && termination.unexpectedExit() }
+    package nonisolated var processIdentifier: Int32 { process.processIdentifier }
 
-    private init(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void) throws {
+    private init(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void, onTermination: @escaping @MainActor @Sendable () -> Void) throws {
         self.onInvalidate = onInvalidate
         restrictions = NativeRestrictions(vaultDirectory: vaultDirectory, vaultID: vaultID)
         var pair: [Int32] = [-1, -1]
@@ -130,16 +140,21 @@ public actor PrivateVaultWorker {
         process.standardInput = child
         process.standardOutput = child
         process.standardError = FileHandle.nullDevice
+        let termination = termination
+        process.terminationHandler = { _ in
+            if termination.unexpectedExit() { Task { @MainActor in onTermination() } }
+        }
         do { try process.run() } catch { transport.invalidate(); throw VaultWorkerError.unavailable }
     }
 
     deinit {
+        termination.expectExit()
         transport.invalidate()
         if process.isRunning { process.terminate() }
     }
 
-    public static func launch(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void = { _ in }) async throws -> PrivateVaultWorker {
-        let worker = try PrivateVaultWorker(python: python, vaultDirectory: vaultDirectory, vaultID: vaultID, onInvalidate: onInvalidate)
+    public static func launch(python: URL, vaultDirectory: URL, vaultID: String, onInvalidate: @escaping @MainActor @Sendable ([UUID]) -> Void = { _ in }, onTermination: @escaping @MainActor @Sendable () -> Void = {}) async throws -> PrivateVaultWorker {
+        let worker = try PrivateVaultWorker(python: python, vaultDirectory: vaultDirectory, vaultID: vaultID, onInvalidate: onInvalidate, onTermination: onTermination)
         do {
             let _: State = try await worker.request("initialize", payload: Initialize(vaultDirectory: vaultDirectory.path))
             return worker
@@ -160,6 +175,7 @@ public actor PrivateVaultWorker {
     }
 
     public func lock() async {
+        termination.expectExit()
         closed = true
         transport.invalidate()
         let child = process

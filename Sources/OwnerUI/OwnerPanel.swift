@@ -51,7 +51,7 @@ public struct OwnerPanel: View {
                     if model.busy { ProgressView().controlSize(.small) }
                     Spacer()
                     if model.unlocked || model.busy || model.editorReview != nil {
-                        Button(model.busy ? "Cancel and lock" : "Lock vault") { Task { await model.lock() } }
+                        Button(model.busy ? "Cancel and lock" : "Lock vault") { model.lockImmediately() }
                             .accessibilityLabel("Lock vault and end access")
                     }
                 }.padding()
@@ -162,7 +162,7 @@ public struct OwnerPanel: View {
                     Text("Applying these changes uses your active vault's encryption settings and master password. The encrypted editing copy stays available for recovery.").foregroundStyle(.secondary)
                     HStack {
                         Button("Apply reviewed changes") { Task { await model.applyEditing() } }.buttonStyle(.borderedProminent).disabled(model.busy)
-                        Button("Cancel review and lock") { Task { await model.lock() } }.disabled(model.busy)
+                        Button("Cancel review and lock") { model.lockImmediately() }.disabled(model.busy)
                     }
                 } else {
                     Text("Review after closing KeePassXC").font(.headline)
@@ -248,6 +248,23 @@ public struct OwnerPanel: View {
             Text("The vault and its retained backups remain local. An older file cannot restore previous agent authority.").foregroundStyle(.secondary)
             Button("Show encrypted vault folder") { NSWorkspace.shared.open(model.configuration.vaultDirectory) }
             Text("The guided restore workflow is still under implementation. This development build must contain synthetic credentials only.").font(.callout).foregroundStyle(.secondary)
+            Divider()
+            Text("Local diagnostics").font(.headline)
+            Text("Review seven days of event codes and counts before exporting. The report contains no account names, websites or credential values.").foregroundStyle(.secondary)
+            Button("Review diagnostic report") { model.prepareDiagnostics() }
+            if let report = model.diagnostics {
+                ScrollView { Text(report.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 220)
+                Button("Export reviewed report…") {
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [.json]
+                    panel.nameFieldStringValue = "shadow-diagnostics.json"
+                    Task { @MainActor in
+                        if await panel.begin() == .OK, let url = panel.url { model.exportDiagnostics(to: url) }
+                    }
+                }
+            } else if !model.diagnosticsAvailable {
+                Text("Diagnostics are unavailable.").font(.callout).foregroundStyle(.secondary)
+            }
             Spacer()
         }.padding(24)
     }

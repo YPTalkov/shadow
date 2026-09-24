@@ -50,12 +50,24 @@ public final class OperationJournal {
             defer { free(canonical) }
             guard sqlite3_open_v2(canonical, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nil) == SQLITE_OK else { throw OperationJournalError.storageUnavailable }
             try execute("PRAGMA trusted_schema=OFF")
+            try execute("PRAGMA secure_delete=ON")
+            let pageSize = try prepare("PRAGMA page_size")
+            let boundedPages = sqlite3_step(pageSize) == SQLITE_ROW && sqlite3_column_int(pageSize, 0) == 4096
+            sqlite3_finalize(pageSize)
+            guard boundedPages else { throw OperationJournalError.storageUnavailable }
             try execute("PRAGMA synchronous=FULL")
             try execute("PRAGMA fullfsync=ON")
             try execute("PRAGMA journal_mode=DELETE")
             try execute("PRAGMA max_page_count=1024")
             try execute("CREATE TABLE IF NOT EXISTS operation (reference TEXT PRIMARY KEY, caller TEXT NOT NULL, boot TEXT NOT NULL, request TEXT NOT NULL, fingerprint TEXT NOT NULL, state TEXT NOT NULL, submitted INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, code TEXT, UNIQUE(caller,boot,request))")
-            try execute("UPDATE operation SET state=CASE WHEN submitted=1 THEN 'outcome_unknown' ELSE 'cancelled' END, code=NULL WHERE state IN \(Self.active)")
+            try execute("CREATE TABLE IF NOT EXISTS audit_count (day INTEGER NOT NULL, code TEXT NOT NULL, count INTEGER NOT NULL CHECK(count BETWEEN 1 AND 1000000000), PRIMARY KEY(day,code))")
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("INSERT INTO audit_count(day,code,count) SELECT ?, CASE WHEN submitted=1 THEN 'outcome_unknown' ELSE 'operation_cancelled' END, COUNT(*) FROM operation WHERE state IN \(Self.active) GROUP BY submitted ON CONFLICT(day,code) DO UPDATE SET count=MIN(audit_count.count+excluded.count,1000000000)", [String(auditDay)])
+                try execute("UPDATE operation SET state=CASE WHEN submitted=1 THEN 'outcome_unknown' ELSE 'cancelled' END, code=NULL WHERE state IN \(Self.active)")
+                try maintain()
+                try execute("COMMIT")
+            } catch { try? execute("ROLLBACK"); throw error }
             let parentFD = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard parentFD >= 0 else { throw OperationJournalError.storageUnavailable }
             let synced = fsync(parentFD); Darwin.close(parentFD)
@@ -139,6 +151,52 @@ public final class OperationJournal {
               [.succeeded, .failed, .cancelled, .outcomeUnknown].contains(state) else { throw OperationJournalError.invalidTransition }
         // A cancellation or failure after permission to submit is ambiguous.
         try execute("UPDATE operation SET state=CASE WHEN submitted=1 AND ? IN ('cancelled','failed') THEN 'outcome_unknown' ELSE ? END, code=? WHERE reference=?", [state.rawValue, state.rawValue, error?.rawValue, reference])
+        let actual = try status(reference, caller: caller).state
+        let code: AuditCode = switch actual {
+        case .succeeded: .operationSucceeded
+        case .outcomeUnknown: .outcomeUnknown
+        case .cancelled: .operationCancelled
+        default: .operationFailed
+        }
+        try record(code)
+    }
+
+    public func record(_ code: AuditCode) throws {
+        try verifyPath()
+        try pruneAudit()
+        try execute("INSERT INTO audit_count(day,code,count) VALUES(?,?,1) ON CONFLICT(day,code) DO UPDATE SET count=MIN(count+1,1000000000)", [String(auditDay), code.rawValue])
+    }
+
+    public func maintain() throws {
+        try verifyPath()
+        try pruneAudit()
+        try execute("DELETE FROM operation WHERE created < ? AND state NOT IN \(Self.active)", [cutoff])
+    }
+
+    public func diagnosticReport() throws -> DiagnosticReport {
+        try verifyPath()
+        try pruneAudit()
+        let statement = try prepare("SELECT day,code,count FROM audit_count ORDER BY day,code")
+        defer { sqlite3_finalize(statement) }
+        var rows: [DiagnosticCount] = []
+        let format = ISO8601DateFormatter()
+        format.formatOptions = [.withFullDate]
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
+            let code = try text(statement, 1), day = sqlite3_column_int64(statement, 0), count = sqlite3_column_int64(statement, 2)
+            guard AuditCode(rawValue: code) != nil, (1...1_000_000_000).contains(count),
+                  (auditDay - 6...auditDay).contains(day), rows.count < AuditCode.allCases.count * 7 else { throw OperationJournalError.storageUnavailable }
+            rows.append(DiagnosticCount(day: format.string(from: Date(timeIntervalSince1970: Double(day) * 86400)), code: code, count: count))
+            result = sqlite3_step(statement)
+        }
+        guard result == SQLITE_DONE else { throw OperationJournalError.storageUnavailable }
+        return try DiagnosticReport(counts: rows)
+    }
+
+    private var auditDay: Int64 { Int64(date().timeIntervalSince1970 / 86400) }
+
+    private func pruneAudit() throws {
+        try execute("DELETE FROM audit_count WHERE day < ? OR day > ?", [String(auditDay - 6), String(auditDay)])
     }
 
     private var cutoff: String { String(Int64(date().timeIntervalSince1970) - 7 * 86400) }
@@ -152,6 +210,7 @@ public final class OperationJournal {
         var current = stat()
         guard descriptor >= 0, lstat(path.path, &current) == 0,
               current.st_mode & S_IFMT == S_IFREG, current.st_uid == getuid(),
+              current.st_size <= 4 * 1024 * 1024,
               current.st_mode & 0o077 == 0, current.st_nlink == 1,
               current.st_dev == identity.st_dev, current.st_ino == identity.st_ino else { throw OperationJournalError.unsafePath }
     }

@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import OwnerUI
+import BrokerHost
+import Darwin
 
 @main
 struct ShadowApp: App {
@@ -10,6 +12,8 @@ struct ShadowApp: App {
 
     init() {
         do {
+            var coreLimit = rlimit(rlim_cur: 0, rlim_max: 0)
+            guard setrlimit(RLIMIT_CORE, &coreLimit) == 0 else { throw OwnerConfigurationError.unavailable }
             model = OwnerVaultModel(configuration: try OwnerConfiguration.local())
             startupMessage = nil
         } catch OwnerConfigurationError.alreadyRunning {
@@ -35,7 +39,7 @@ struct ShadowApp: App {
         .defaultSize(width: 1040, height: 720)
         .commands {
             CommandMenu("Vault") {
-                Button("Lock Vault") { Task { await model?.lock() } }
+                Button("Lock Vault") { model?.lockImmediately() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
@@ -45,37 +49,25 @@ struct ShadowApp: App {
 @MainActor
 final class OwnerLifecycle: NSObject, NSApplicationDelegate {
     private var model: OwnerVaultModel?
-    private var observers: [NSObjectProtocol] = []
-    private var idleTask: Task<Void, Never>?
-    private var activity: Any?
+    private var monitor: OwnerLifecycleMonitor?
 
     func attach(_ model: OwnerVaultModel) {
         guard self.model == nil else { return }
         self.model = model
-        let center = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                Task { @MainActor in await model.lock() }
-            })
-        }
-        activity = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { event in
-            MainActor.assumeIsolated { model.noteInteraction() }
-            return event
-        }
-        idleTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                await model.checkIdle()
-            }
-        }
+        monitor = OwnerLifecycleMonitor(model: model)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        monitor?.stop()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        idleTask?.cancel()
+        monitor?.stop()
+        model?.lockImmediately(reason: .quit)
         Task {
-            await model?.lock()
+            await model?.finishLock()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

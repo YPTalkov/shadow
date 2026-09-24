@@ -14,8 +14,8 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U8 | Partial | Shared request/result contracts, native API, CLI/MCP/PTC parity (29 tests), native authority tests and actual Linux Codex MCP pass. Protected jobs and production VM enrollment remain. |
 | U9 | Partial | Production VM driver, private credential delivery, root supervisor and renewable worker/egress leases implemented. Real native-vault-to-VM HTTPS login, idempotent retry, post-submit revocation and 12-second host suspension pass. Owner runtime wiring and full integrated attack matrix remain in U6/U13/U14. |
 | U10 | Partial | Schema-bound views, 18 hostile-view cases, 9 Chromium challenge cases, native HTTPS TOTP/redirected SSO, actual private VM-view owner input, cancellation and measured two-minute expiry pass. See `docs/release/challenge-status.md`. Owner-selected site qualification and packaged capability display remain. |
-| U11 | In progress | Submit receipts recover unknown outcomes without replay; retained-grant retries recover status. Owner challenge cancellation, expiry and restart receipts implemented. Remaining: integrated screen/sleep/worker lifecycle and safe audit. |
-| U12 | Pending | Backup/restore and recovery UI. |
+| U11 | Partial | Synchronous lock/sleep/session handlers, continuous idle expiry, worker-crash closure, bounded seven-day diagnostics and owner-reviewed export implemented. 18 native tests, live VM worker-kill test and UI export pass. Physical OS-event and packaged crash/diagnostic rehearsal remains in U13/U14. |
+| U12 | In progress | Implement encrypted backup retention, restore and recovery UI while preserving independent restriction history. |
 | U13 | Pending | Packaged cross-boundary security and end-to-end suite. |
 | U14 | Pending | Packaging, independent review and owner rollout checkpoint. |
 

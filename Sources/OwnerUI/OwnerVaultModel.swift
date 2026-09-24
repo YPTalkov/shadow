@@ -10,6 +10,8 @@ public final class OwnerVaultModel {
     public let agentAPI: AgentAPI
     public private(set) var protectedSessions: ProtectedSessionService?
     private var operationJournal: OperationJournal?
+    public private(set) var diagnostics: DiagnosticReport?
+    public private(set) var diagnosticsAvailable = false
     public private(set) var unlocked = false
     public private(set) var busy = false
     public private(set) var status = "Locked"
@@ -30,15 +32,26 @@ public final class OwnerVaultModel {
     private let sourceRuntime = SourceRuntime()
     private var editorReservation: EditorReservation?
     private var isLocking = false
+    private var lockTask: Task<Void, Never>?
     private var worker: PrivateVaultWorker?
     private var epoch = 0
     private var importOperation = UUID()
-    private var lastInteraction = Date()
+    private var lastInteraction: TimeInterval
+    private var lastMaintenance: TimeInterval
+    @ObservationIgnored private let clock: () -> TimeInterval
 
-    public init(configuration: OwnerConfiguration) {
+    public init(configuration: OwnerConfiguration, clock: @escaping () -> TimeInterval = { DeadlineClock.now }) {
         self.configuration = configuration
+        self.clock = clock
+        lastInteraction = clock()
+        lastMaintenance = clock()
         agentAPI = AgentAPI(access: access)
+        access.onAudit = { [weak self] code in self?.record(code) }
         for adapter in QualifiedAdapterPolicy.packaged { access.installQualifiedAdapter(adapter) }
+        do {
+            operationJournal = try OperationJournal(path: configuration.root.appendingPathComponent("operations.sqlite"))
+            diagnosticsAvailable = true
+        } catch { message = "Local diagnostics and operation receipts are unavailable. Agent sessions cannot start." }
         do {
             let store = try SourceEnrollmentStore(root: configuration.root, vaultID: configuration.vaultID)
             sourceStore = store
@@ -50,10 +63,20 @@ public final class OwnerVaultModel {
         FileManager.default.fileExists(atPath: configuration.vaultDirectory.appendingPathComponent("vault.kdbx").path)
     }
 
-    public func noteInteraction() { lastInteraction = Date() }
+    public func noteInteraction() { lastInteraction = clock() }
 
     public func checkIdle() async {
-        if (unlocked || editorReview != nil) && Date().timeIntervalSince(lastInteraction) >= 15 * 60 { await lock() }
+        access.expire()
+        if clock() - lastMaintenance >= 60 {
+            lastMaintenance = clock()
+            do { try operationJournal?.maintain() }
+            catch {
+                diagnosticsAvailable = false
+                lockImmediately()
+                message = "The operation journal is unavailable. Existing encrypted files were preserved."
+            }
+        }
+        if (unlocked || editorReview != nil) && clock() - lastInteraction >= 15 * 60 { lockImmediately(reason: .idle) }
     }
 
     public func open(password: String, create: Bool) async {
@@ -85,6 +108,7 @@ public final class OwnerVaultModel {
             sourceSummaries = summaries
             unlocked = true
             status = "Unlocked"
+            record(.vaultOpened)
             noteInteraction()
         } catch {
             guard generation == epoch else { return }
@@ -95,15 +119,23 @@ public final class OwnerVaultModel {
     }
 
     public func lock() async {
+        lockImmediately()
+        await finishLock()
+    }
+
+    public func finishLock() async { await lockTask?.value }
+
+    /// Revoke on the event's current MainActor turn, before scheduling teardown.
+    public func lockImmediately(reason: OwnerLockReason = .owner) {
         guard !isLocking else { return }
         isLocking = true
-        defer { isLocking = false; busy = false }
         epoch += 1
         sourceRuntime.stop()
         protectedSessions?.shutdown()
         protectedSessions = nil
         agentAPI.protectedService = nil
         access.lock()
+        record(AuditCode(lock: reason))
         let client = worker
         worker = nil
         unlocked = false
@@ -118,10 +150,17 @@ public final class OwnerVaultModel {
         sourceCandidate = nil
         sourceSummaries = []
         mapping = OwnerCSVMapping(title: "", url: "", username: "", password: "")
-        await client?.lock()
-        if editor != nil {
-            status = "Editing checkout active"
-            reserveEditor()
+        let generation = epoch
+        if reason == .workerStopped { message = "The vault worker stopped. Unlock again before continuing." }
+        lockTask = Task { [weak self] in
+            await client?.lock()
+            guard let self, generation == self.epoch else { return }
+            self.isLocking = false; self.busy = false
+            self.lockTask = nil
+            if self.editor != nil {
+                self.status = "Editing checkout active"
+                self.reserveEditor()
+            }
         }
     }
 
@@ -201,9 +240,13 @@ public final class OwnerVaultModel {
     }
 
     private func launchWorker() async throws -> PrivateVaultWorker {
-        try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID) { [weak access] ids in
+        let generation = epoch
+        return try await PrivateVaultWorker.launch(python: configuration.python, vaultDirectory: configuration.vaultDirectory, vaultID: configuration.vaultID, onInvalidate: { [weak access] ids in
             for id in ids { access?.invalidate(account: id) }
-        }
+        }, onTermination: { [weak self] in
+            guard let self, self.epoch == generation else { return }
+            self.lockImmediately(reason: .workerStopped)
+        })
     }
 
     private func reserveEditor() {
@@ -279,6 +322,7 @@ public final class OwnerVaultModel {
             return {
                 self.accounts = items
                 self.access.openVault(accounts: Self.consentAccounts(items))
+                self.record(.importCompleted)
                 self.nextOffset = nil
                 self.preview = nil
                 self.selectedCSV = nil
@@ -343,6 +387,7 @@ public final class OwnerVaultModel {
                 self.accounts = items; self.nextOffset = nil
                 self.access.openVault(accounts: Self.consentAccounts(items))
                 self.sourceSummaries = summaries
+                if result.state == "committed" { self.record(.sourceRefreshed) }
                 switch result.state {
                 case "committed": self.message = "Source updated: \(result.receipt?.accepted ?? 0) accepted, \(result.receipt?.conflicted ?? 0) conflicts, \(result.receipt?.retained ?? 0) retained."
                 case "needs_owner_action": self.message = "The connector needs your attention. Open its app to sign in or unlock the source, then refresh again."
@@ -398,6 +443,33 @@ public final class OwnerVaultModel {
             try await client.cancelCSV()
             return { self.preview = nil; self.selectedCSV = nil; self.headers = [] }
         }
+    }
+
+    public func prepareDiagnostics() {
+        diagnostics = nil
+        do {
+            guard let operationJournal else { throw OperationJournalError.storageUnavailable }
+            diagnostics = try operationJournal.diagnosticReport()
+            diagnosticsAvailable = true
+        } catch {
+            diagnosticsAvailable = false
+            message = "The diagnostic report could not be read. Existing encrypted files were preserved."
+        }
+    }
+
+    public func exportDiagnostics(to destination: URL) {
+        guard let diagnostics else { return }
+        do {
+            try diagnostics.data.write(to: destination, options: .atomic)
+            message = "The reviewed diagnostic report was exported."
+        } catch { message = "The diagnostic report could not be saved." }
+    }
+
+    private func record(_ code: AuditCode) {
+        do {
+            guard let operationJournal else { throw OperationJournalError.storageUnavailable }
+            try operationJournal.record(code)
+        } catch { diagnosticsAvailable = false }
     }
 
     private func perform(_ operation: (PrivateVaultWorker) async throws -> (() -> Void)) async {

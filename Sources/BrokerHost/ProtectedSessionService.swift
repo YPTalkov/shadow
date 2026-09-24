@@ -61,14 +61,15 @@ extension ProtectedBrowserDriver { var ownerMachine: VZVirtualMachine? { nil } }
     private var active: Session?
     private var monitor: Task<Void, Never>?
     private var closed = false
+    private var revocationObserver: UUID?
+    private let workerAlive: @MainActor () -> Bool
 
-    init(access: AccessCoordinator, journal: OperationJournal, resolve: @escaping @MainActor (ConsentAccount, String, Bool) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver) {
+    init(access: AccessCoordinator, journal: OperationJournal, workerAlive: @escaping @MainActor () -> Bool = { true }, resolve: @escaping @MainActor (ConsentAccount, String, Bool) async throws -> PrivateCredential, makeDriver: @escaping @MainActor (QualifiedAdapterPolicy) throws -> any ProtectedBrowserDriver) {
         self.access = access; self.journal = journal; self.resolve = resolve; self.makeDriver = makeDriver
-        let previous = access.onRevoke
-        access.onRevoke = { [weak self] grant in
+        self.workerAlive = workerAlive
+        revocationObserver = access.observeRevocation(owner: self, authority: true) { [weak self] grant in
             // Close browser/egress before any callback can start teardown.
             if let self, let session = self.active, grant == nil || grant == session.grant { self.terminate(session, state: .cancelled) }
-            previous?(grant)
         }
         challenges.onCancel = { [weak self] id in
             if let self, let session = self.active, session.id == id { self.terminate(session, state: .cancelled) }
@@ -85,6 +86,7 @@ extension ProtectedBrowserDriver { var ownerMachine: VZVirtualMachine? { nil } }
 
     public func shutdown() {
         closed = true; monitor?.cancel(); monitor = nil
+        if let revocationObserver { access.removeRevocationObserver(revocationObserver); self.revocationObserver = nil }
         if let active { terminate(active, state: .cancelled) }
     }
 
@@ -206,7 +208,7 @@ extension ProtectedBrowserDriver { var ownerMachine: VZVirtualMachine? { nil } }
     private func check(_ session: Session) throws {
         access.expire()
         try session.driver.checkLease()
-        guard !closed, active === session, !Task.isCancelled,
+        guard !closed, workerAlive(), active === session, !Task.isCancelled,
               access.accounts.contains(where: { $0.policy == session.account.policy }),
               session.adapter.credentialOrigins.allSatisfy({ access.authorize(grantRef: session.grant, caller: session.caller, account: session.account.id, adapterID: session.adapter.id, origin: $0, action: .login, session: session.id) }) else { throw AgentAPIError.consentRequired }
     }

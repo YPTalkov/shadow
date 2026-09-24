@@ -80,7 +80,13 @@ public enum ConsentError: String, Error, Sendable {
     public private(set) var pending: [ConsentRequest] = []
     public private(set) var grants: [ActiveAccessGrant] = []
     public private(set) var accounts: [ConsentAccount] = []
-    public var onRevoke: (@MainActor (String?) -> Void)?
+    public var onAudit: (@MainActor (AuditCode) -> Void)?
+    private struct RevocationObserver {
+        weak var owner: AnyObject?
+        let authority: Bool
+        let notify: @MainActor (String?) -> Void
+    }
+    @ObservationIgnored private var revocationObservers: [UUID: RevocationObserver] = [:]
     @ObservationIgnored private var adapters: [String: QualifiedAdapterPolicy] = [:]
     @ObservationIgnored private var replies: [String: (EnrolledAgent, ConsentReply)] = [:]
     @ObservationIgnored private var retryKeys: [String: (String, String)] = [:]
@@ -93,6 +99,22 @@ public enum ConsentError: String, Error, Sendable {
         self.clock = clock; self.date = date
     }
 
+    @discardableResult func observeRevocation(owner: AnyObject, authority: Bool = false, _ notify: @escaping @MainActor (String?) -> Void) -> UUID {
+        revocationObservers = revocationObservers.filter { $0.value.owner != nil }
+        let id = UUID()
+        revocationObservers[id] = RevocationObserver(owner: owner, authority: authority, notify: notify)
+        return id
+    }
+
+    func removeRevocationObserver(_ id: UUID) { revocationObservers.removeValue(forKey: id) }
+
+    private func notifyRevocation(_ grant: String?) {
+        revocationObservers = revocationObservers.filter { $0.value.owner != nil }
+        // Browser and egress authority closes before output channel teardown.
+        let observers = revocationObservers.values.sorted { $0.authority && !$1.authority }
+        for observer in observers where observer.owner != nil { observer.notify(grant) }
+    }
+
     public func enroll(_ caller: EnrolledAgent) {
         if let old = agents.first(where: { $0.id == caller.id }), old != caller { removeAgent(old) }
         if !agents.contains(caller) { agents.append(caller) }
@@ -102,6 +124,10 @@ public enum ConsentError: String, Error, Sendable {
         for grant in grants.filter({ $0.caller == caller }) { revoke(grant.id) }
         for request in pending.filter({ $0.caller == caller }) { finish(request, state: .revoked) }
         agents.removeAll { $0 == caller }
+        let removed = Set(replies.filter { $0.value.0 == caller }.keys)
+        replies = replies.filter { !removed.contains($0.key) }
+        retryKeys = retryKeys.filter { !removed.contains($0.value.1) }
+        prompts.removeValue(forKey: caller.id)
     }
 
     public func installQualifiedAdapter(_ adapter: QualifiedAdapterPolicy) {
@@ -134,10 +160,10 @@ public enum ConsentError: String, Error, Sendable {
     public func lock() {
         unlocked = false
         references.invalidateAll()
+        notifyRevocation(nil)
         for request in pending { finish(request, state: .revoked) }
         for grant in grants { revoke(grant.id) }
         accounts = []
-        onRevoke?(nil)
     }
 
     public func invalidate(account: UUID) {
@@ -235,7 +261,8 @@ public enum ConsentError: String, Error, Sendable {
         for (key, record) in replies where record.1.grantRef == grantRef {
             replies[key] = (record.0, ConsentReply(requestRef: key, state: state, grantRef: nil))
         }
-        onRevoke?(grantRef)
+        notifyRevocation(grantRef)
+        onAudit?(.grantRevoked)
     }
 
     public func disclosedAccounts(caller: EnrolledAgent) throws -> [ConsentAccount] {
@@ -311,5 +338,11 @@ public enum ConsentError: String, Error, Sendable {
     private func finish(_ request: ConsentRequest, state: ConsentState, grant: String? = nil) {
         pending.removeAll { $0.id == request.id }
         replies[request.id] = (request.caller, ConsentReply(requestRef: request.id, state: state, grantRef: grant))
+        switch state {
+        case .granted: onAudit?(.consentGranted)
+        case .denied: onAudit?(.consentDenied)
+        case .expired: onAudit?(.consentExpired)
+        default: break
+        }
     }
 }

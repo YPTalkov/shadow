@@ -106,6 +106,16 @@ import QuartzCore
             }
             guard status["state"]?.string == "succeeded", let session = status["session_ref"]?.string else { throw AgentAPIError.unavailable }
             print("BROWSER_NATIVE_AUTH=pass")
+            if interruption == "worker" {
+                guard kill(worker.processIdentifier, SIGKILL) == 0 else { throw AgentAPIError.unavailable }
+                for _ in 0..<100 where worker.isRunning { try await Task.sleep(for: .milliseconds(20)) }
+                guard !worker.isRunning,
+                      try await call("operation.get", ["operation_ref": .string(operation)])["session_ref"] == .null,
+                      try await call("auth.login", arguments, id: loginID)["session_ref"] == .null else { throw AgentAPIError.unavailable }
+                print("BROWSER_NATIVE_WORKER=pass")
+                await worker.lock()
+                return
+            }
             if interruption == "suspend" {
                 print("BROWSER_NATIVE_SUSPEND=ready")
                 fflush(nil)

@@ -7,6 +7,7 @@ import PolicyCore
     var submissions = 0
     var resolutions = 0
     var revoked = false
+    var workerAlive = true
     var stopAt: AuthenticationStage?
     var reached: AuthenticationStage?
     var resume: CheckedContinuation<Void, Never>?
@@ -68,7 +69,7 @@ import PolicyCore
     #expect(service.challenges.pending == nil && browser.submissions == 1)
 }
 
-@MainActor private func sessionSetup(retained: Bool = false, browser: SyntheticBrowser) throws -> (ProtectedSessionService, AccessCoordinator, AgentAPI, AgentRequest, EnrolledAgent, URL) {
+@MainActor private func sessionSetup(retained: Bool = false, browser: SyntheticBrowser, workerAlive: @escaping @MainActor () -> Bool = { true }) throws -> (ProtectedSessionService, AccessCoordinator, AgentAPI, AgentRequest, EnrolledAgent, URL) {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-sessions-\(UUID())")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
     let access = AccessCoordinator(), caller = EnrolledAgent(id: UUID(), boot: UUID(), displayName: "Synthetic")
@@ -83,13 +84,28 @@ import PolicyCore
     try access.approveUse(consent.requestRef, duration: 300, approveRetained: retained)
     let grant = try #require(access.status(consent.requestRef, caller: caller).grantRef)
     let journal = try OperationJournal(path: dir.appendingPathComponent("operations.sqlite"))
-    let service = ProtectedSessionService(access: access, journal: journal, resolve: { account, origin, _ in
+    let service = ProtectedSessionService(access: access, journal: journal, workerAlive: workerAlive, resolve: { account, origin, _ in
         #expect(account.id == id && account.policy.revision == 1 && origin == "https://app.shadow.test")
         return PrivateCredential(username: "owner", password: "synthetic-password-canary", totp: nil)
     }, makeDriver: { _ in browser })
     let api = AgentAPI(access: access); api.protectedService = service
     let request = AgentRequest(id: UUID(), operation: "auth.login", arguments: ["account_ref": .string(accountRef), "grant_ref": .string(grant), "adapter_id": .string("synthetic-v1")])
     return (service, access, api, request, caller, dir)
+}
+
+@Test @MainActor func protectedSessionCannotReturnAnOldSessionAfterVaultWorkerExit() async throws {
+    let browser = SyntheticBrowser()
+    let (service, _, api, request, caller, dir) = try sessionSetup(browser: browser, workerAlive: { browser.workerAlive })
+    defer { service.shutdown(); try? FileManager.default.removeItem(at: dir) }
+    let first = try await publicLogin(api, request, caller)
+    let reference = try #require(first["result"]?["operation_ref"]?.string)
+    for _ in 0..<200 where try service.status(reference, caller: caller).state == .running { await Task.yield() }
+    #expect(try service.status(reference, caller: caller).session != nil)
+    browser.workerAlive = false
+    #expect(try service.status(reference, caller: caller).session == nil)
+    #expect(browser.revoked)
+    #expect(try await publicLogin(api, request, caller)["result"]?["session_ref"] == .null)
+    #expect(browser.submissions == 1)
 }
 
 @MainActor private func publicLogin(_ api: AgentAPI, _ request: AgentRequest, _ caller: EnrolledAgent) async throws -> JSONValue {

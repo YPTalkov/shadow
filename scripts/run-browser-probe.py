@@ -16,7 +16,7 @@ IMAGE = ROOT / ".build/guest-cache/browser"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--session", action="store_true")
-    parser.add_argument("--interrupt", choices=("revoke", "suspend"))
+    parser.add_argument("--interrupt", choices=("revoke", "suspend", "worker"))
     parser.add_argument("--flow", choices=("totp", "owner", "sso", "unsupported", "owner_cancel", "owner_timeout"))
     arguments = parser.parse_args()
     session = arguments.session or arguments.interrupt is not None or arguments.flow is not None
@@ -40,7 +40,7 @@ def main():
             environment = {**os.environ, "SHADOW_FIXTURE_PORT": str(fixture.server_port), "SHADOW_PROBE_ROOT": str(ROOT), "SHADOW_PROBE_INTERRUPT": arguments.interrupt or "", "SHADOW_PROBE_FLOW": arguments.flow or ""}
             with subprocess.Popen(command, stdout=console, stderr=subprocess.DEVNULL, env=environment) as run:
                 try:
-                    if arguments.interrupt:
+                    if arguments.interrupt in {"revoke", "suspend"}:
                         deadline = time.monotonic() + 50
                         while run.poll() is None and time.monotonic() < deadline:
                             ready = fixture.submissions == 1 if arguments.interrupt == "revoke" else "BROWSER_NATIVE_SUSPEND=ready" in console_path.read_text()

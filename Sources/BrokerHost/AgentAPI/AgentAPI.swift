@@ -81,8 +81,7 @@ public enum AgentDomainResult: Sendable {
 
     public init(access: AccessCoordinator) {
         self.access = access
-        let previous = access.onRevoke
-        access.onRevoke = { [weak self] grant in previous?(grant); self?.invalidateOutputs() }
+        access.observeRevocation(owner: self) { [weak self] _ in self?.invalidateOutputs() }
     }
 
     public func invalidateOutputs() {
@@ -107,6 +106,8 @@ public enum AgentDomainResult: Sendable {
         var requestID: UUID?
         do {
             guard access.agents.contains(caller) else { throw ConsentError.callerUnavailable }
+            let enrolled = Set(access.agents.map(\.id))
+            rates = rates.filter { enrolled.contains($0.key) }
             let recent = (rates[caller.id] ?? []).filter { $0 > DeadlineClock.now - 60 }
             guard recent.count < 120 else { throw AgentAPIError.rateLimited }
             rates[caller.id] = recent + [DeadlineClock.now]

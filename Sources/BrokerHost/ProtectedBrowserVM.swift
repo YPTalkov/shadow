@@ -239,13 +239,13 @@ private actor ControlWriter {
 
 extension ProtectedSessionService {
     public convenience init(access: AccessCoordinator, journal: OperationJournal, worker: PrivateVaultWorker, image: BrowserVMImage) {
-        self.init(access: access, journal: journal, resolve: { account, origin, includeTOTP in
+        self.init(access: access, journal: journal, workerAlive: { worker.isRunning }, resolve: { account, origin, includeTOTP in
             try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin, includeTOTP: includeTOTP)
         }, makeDriver: { adapter in try ProtectedBrowserVM(image: image, adapter: adapter) })
     }
 
     package convenience init(access: AccessCoordinator, journal: OperationJournal, worker: PrivateVaultWorker, image: BrowserVMImage, fixtureTunnel: @escaping BrowserFixtureTunnel) {
-        self.init(access: access, journal: journal, resolve: { account, origin, includeTOTP in
+        self.init(access: access, journal: journal, workerAlive: { worker.isRunning }, resolve: { account, origin, includeTOTP in
             try await worker.resolveCredential(entry: account.id, revision: account.policy.revision, origin: origin, includeTOTP: includeTOTP)
         }, makeDriver: { adapter in try ProtectedBrowserVM(image: image, adapter: adapter, fixture: fixtureTunnel) })
     }

@@ -109,6 +109,16 @@ Task { @MainActor in
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-locked.jpg"))
         guard !owner.unlocked, owner.accounts.isEmpty else { throw OwnerConfigurationError.unavailable }
+        stage = "diagnostics"
+        owner.prepareDiagnostics()
+        guard let report = owner.diagnostics, !report.text.contains("synthetic-one"), !report.text.contains("Demo workspace") else { throw OwnerConfigurationError.unavailable }
+        let diagnosticFile = root.appendingPathComponent("reviewed-diagnostics.json")
+        owner.exportDiagnostics(to: diagnosticFile)
+        guard try Data(contentsOf: diagnosticFile) == report.data else { throw OwnerConfigurationError.unavailable }
+        owner.message = nil
+        show(OwnerPanel(model: owner, initialDestination: .recovery), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-diagnostics.jpg"))
         succeeded = true
     } catch {
         print("owner_ui_probe_failed: " + stage)
