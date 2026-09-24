@@ -50,9 +50,9 @@ import PolicyCore
             try Gateway.forward(guest: guestFD, host: hostFD) {
                 try lease.check(instance: "vm", boot: "boot", session: "session", destination: destination)
             }
-        } catch EgressError.denied { return true }
-        catch { return false }
-        return false
+        } catch EgressError.denied { return (denied: true, stoppedAt: DeadlineClock.now) }
+        catch { return (denied: false, stoppedAt: DeadlineClock.now) }
+        return (denied: false, stoppedAt: DeadlineClock.now)
     }
     let guestHandle = FileHandle(fileDescriptor: guest[0], closeOnDealloc: false)
     let hostHandle = FileHandle(fileDescriptor: host[1], closeOnDealloc: false)
@@ -66,8 +66,12 @@ import PolicyCore
     #expect(try guestHandle.read(upToCount: 18) == Data("synthetic-response".utf8))
     let revokedAt = DeadlineClock.now
     lease.revoke()
-    #expect(await task.value)
-    #expect(DeadlineClock.now - revokedAt < 1)
+    let result = await task.value
+    #expect(result.denied)
+    // Measure the forwarding thread's exit, excluding time spent waiting for
+    // this test task to be scheduled again on a busy runner.
+    #expect(result.stoppedAt >= revokedAt)
+    #expect(result.stoppedAt - revokedAt < 1)
     try guestHandle.write(contentsOf: Data("after-revocation".utf8))
     ready = pollfd(fd: host[1], events: Int16(POLLIN), revents: 0)
     #expect(poll(&ready, 1, 100) == 0)
