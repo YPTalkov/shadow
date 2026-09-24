@@ -171,7 +171,7 @@ private actor ControlWriter {
         guard let identity = channels?.identity else { throw AgentAPIError.unavailable }
         lease = EgressLease(instance: identity.instance.uuidString, boot: identity.boot.uuidString, session: session, destinations: destinations, expiresAt: DeadlineClock.now + 10)
         try lease?.renew(sequence: sequence)
-        try await machine.start()
+        try await machine.startOnMainActor()
         let deadline = DeadlineClock.now + 20
         while channel == nil {
             guard !revoked, DeadlineClock.now < deadline else { throw AgentAPIError.unavailable }

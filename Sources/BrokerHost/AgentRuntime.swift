@@ -124,7 +124,7 @@ package typealias AgentModelStream = @Sendable (AgentModelRequest, @escaping @Se
                 guard !Task.isCancelled, let self, self.generation == epoch, self.state == .starting else { return }
                 self.finish(.failed)
             }
-            try await machine.start()
+            try await machine.startOnMainActor()
         } catch { if generation == epoch { finish(.failed) } }
     }
 

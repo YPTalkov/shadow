@@ -44,7 +44,7 @@ import OwnerUI
             }
         }
         defer { channels?.revoke(); Task { try? await machine.stop() } }
-        try await machine.start()
+        try await machine.startOnMainActor()
         let deadline = DeadlineClock.now + 35
         while !failed, DeadlineClock.now < deadline, machine.state != .stopped {
             try await Task.sleep(for: .milliseconds(100))

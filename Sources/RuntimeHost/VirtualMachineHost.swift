@@ -3,6 +3,17 @@ import CryptoKit
 import Darwin
 import Virtualization
 
+extension VZVirtualMachine {
+    /// Keep the VM on its main queue across SDKs whose generated async start
+    /// method lacks actor isolation. Only the completion result crosses back.
+    @MainActor
+    public func startOnMainActor() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            start(completionHandler: { continuation.resume(with: $0) })
+        }
+    }
+}
+
 public enum VMRole: Sendable {
     case agent
     case browser
