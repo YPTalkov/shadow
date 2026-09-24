@@ -210,6 +210,7 @@ def main() -> None:
         payload.update({"shadow/browser_probe.py": (ROOT / "images/browser-probe.py").read_bytes(),
                         "shadow/boot_probe.py": (ROOT / "images/browser-boot-probe.py").read_bytes(),
                         "shadow/browser_scenarios.py": (ROOT / "tests/browser/guest_scenarios.py").read_bytes()})
+        payload["shadow/guest_safe_views.py"] = (ROOT / "tests/browser/guest_safe_views.py").read_bytes()
     if arguments.profile == "qualification":
         payload["shadow/runtime_qualification.py"] = (ROOT / "images/browser-runtime-qualification.py").read_bytes()
     if arguments.profile != "runtime":

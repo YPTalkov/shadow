@@ -267,7 +267,13 @@
                     "stale_request",
                     "invalid_scope",
                     "request_conflict",
-                    "transport_unavailable"
+                    "transport_unavailable",
+                    "unsupported_view",
+                    "unsupported_challenge",
+                    "document_changed",
+                    "session_closed",
+                    "authentication_failed",
+                    "outcome_unknown"
                   ]
                 },
                 {
@@ -289,6 +295,93 @@
                 "closed",
                 "succeeded"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "view_id",
+            "document_ref",
+            "records"
+          ],
+          "properties": {
+            "view_id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]+$",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "document_ref": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "records": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fields",
+                  "actions"
+                ],
+                "properties": {
+                  "fields": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "value"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9_.-]+$",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 256
+                        }
+                      }
+                    }
+                  },
+                  "actions": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "element_ref"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9_.-]+$",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "element_ref": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$",
+                          "minLength": 64,
+                          "maxLength": 64
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -319,7 +412,13 @@
             "stale_request",
             "invalid_scope",
             "request_conflict",
-            "transport_unavailable"
+            "transport_unavailable",
+            "unsupported_view",
+            "unsupported_challenge",
+            "document_changed",
+            "session_closed",
+            "authentication_failed",
+            "outcome_unknown"
           ]
         }
       }

@@ -15,7 +15,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/login":
             self.reply(200, FORM)
         elif self.path == "/items" and self.headers.get("Cookie") == "fixture_session=synthetic-http-only-canary":
-            self.reply(200, '<main data-view="items"><h1>Saved items</h1><ul><li>Example report</li></ul></main>')
+            self.reply(200, '<main data-view="items"><h1>Saved items</h1><ul><li data-record><span data-field="title">Example report</span><a data-action="open" href="/items/report-1">Open</a></li></ul></main>')
+        elif self.path == "/items/report-1" and self.headers.get("Cookie") == "fixture_session=synthetic-http-only-canary":
+            self.reply(200, '<main data-view="detail"><article><h1 data-field="title">Example report</h1><span data-field="status">Ready</span></article></main>')
         else:
             self.reply(404, "")
 

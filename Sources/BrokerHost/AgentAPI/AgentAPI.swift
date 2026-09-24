@@ -6,6 +6,8 @@ public enum AgentAPIError: String, Error, Sendable {
     case invalidRequest = "invalid_request", unsupportedVersion = "unsupported_version", rateLimited = "rate_limited"
     case invalidCursor = "invalid_cursor", invalidReference = "invalid_reference", capabilityUnavailable = "capability_unavailable"
     case responseLimit = "response_limit", unavailable, consentRequired = "account_consent_required"
+    case unsupportedView = "unsupported_view", unsupportedChallenge = "unsupported_challenge", documentChanged = "document_changed"
+    case sessionClosed = "session_closed", authenticationFailed = "authentication_failed", outcomeUnknown = "outcome_unknown"
 }
 
 public struct AgentRequest: Sendable {
@@ -45,11 +47,13 @@ public enum AgentDomainResult: Sendable {
     case operation(AgentOperationStatus)
     case closed
     case completed
+    case view(SafeBrowserView)
     var json: JSONValue {
         switch self {
         case .operation(let status): status.json
         case .closed: .object(["state": .string("closed")])
         case .completed: .object(["state": .string("succeeded")])
+        case .view(let view): view.json
         }
     }
 }

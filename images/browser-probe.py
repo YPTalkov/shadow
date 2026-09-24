@@ -24,6 +24,8 @@ async def main():
         await context.close()
         from browser_scenarios import run
         await run(browser)
+        from guest_safe_views import run as safe_views
+        await safe_views(browser)
         await browser.close()
         from browser_worker.egress import ConnectProxy
         from browser_worker.watchdog import WorkerLease
@@ -52,7 +54,7 @@ async def main():
 
             result = await AtomicAuthenticator(page, OutputGate(lease), SPEC).run(resolve, authorize)
             assert result.state == "succeeded", ("https", result.state, result.code, phases, failures)
-            assert await page.locator("li").inner_text() == "Example report"
+            assert await page.locator("[data-field=title]").inner_text() == "Example report"
             print("BROWSER_HTTPS_AUTH=pass", flush=True)
             crash_page = await context.new_page()
             await crash_page.set_content('<input type="password">')

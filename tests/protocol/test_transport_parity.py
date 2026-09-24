@@ -82,3 +82,18 @@ def test_denied_native_consent_cannot_be_bypassed(denied_native, kind):
         frontend.call("catalog.search")
     with pytest.raises(AgentError, match="invalid_request"):
         frontend.call("access.request", {"kind": "catalog", "approve": True})
+
+
+@pytest.mark.parametrize("kind", ["cli", "mcp", "ptc"])
+def test_safe_views_have_identical_transport_projection(kind):
+    view = {"view_id": "items", "document_ref": "a" * 64, "records": [{"fields": [{"name": "title", "value": "Example report"}], "actions": [{"id": "open", "element_ref": "b" * 64}]}]}
+
+    def transport(data):
+        request = json.loads(data)
+        return encode({"protocol_major": 1, "request_id": request["request_id"], "result": view})
+
+    frontend = Frontend(kind, transport)
+    assert frontend.call("browser.observe", {"session_ref": "c" * 64, "view_id": "items"}) == view
+    view["records"][0]["cookie"] = "synthetic-cookie-canary"
+    with pytest.raises(AgentError):
+        frontend.call("browser.observe", {"session_ref": "c" * 64, "view_id": "items"})

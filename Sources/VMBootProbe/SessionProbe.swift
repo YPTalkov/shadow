@@ -31,7 +31,8 @@ import Darwin
             access.openVault(accounts: [ConsentAccount(metadata: item, policy: AccountPolicy(id: accountID, revision: item.revision, source: .local, presence: .present, lastObserved: nil, restrictionEvent: nil))])
             let caller = EnrolledAgent(id: UUID(), boot: UUID(), displayName: "Synthetic VM client")
             access.enroll(caller)
-            access.installQualifiedAdapter(QualifiedAdapterPolicy(id: "synthetic-v1", credentialOrigins: ["https://app.shadow.test"], resourceOrigins: ["https://app.shadow.test"], actions: [.login, .observe]))
+            let actions: Set<ProtectedAction> = [.login, .observe, .extract, .navigate, .click]
+            access.installQualifiedAdapter(QualifiedAdapterPolicy(id: "synthetic-v1", credentialOrigins: ["https://app.shadow.test"], resourceOrigins: ["https://app.shadow.test"], actions: actions))
             let service = ProtectedSessionService(access: access, journal: try OperationJournal(path: directory.appendingPathComponent("operations.sqlite")), worker: worker, image: image) { descriptor, channel, authorize in
                 try FixtureTunnel.run(guest: descriptor, port: port, transport: channel, authorize: authorize)
             }
@@ -40,7 +41,7 @@ import Darwin
             let disclosure = try access.requestCatalog(caller: caller, requestID: UUID())
             try access.approveCatalog(disclosure.requestRef, selected: [accountID], duration: 300)
             let reference = try access.accountReference(accountID, caller: caller)
-            let use = try access.requestUse(caller: caller, requestID: UUID(), accountRef: reference, adapterID: "synthetic-v1", actions: [.login, .observe])
+            let use = try access.requestUse(caller: caller, requestID: UUID(), accountRef: reference, adapterID: "synthetic-v1", actions: actions)
             try access.approveUse(use.requestRef, duration: 300, approveRetained: false)
             guard let grant = try access.status(use.requestRef, caller: caller).grantRef else { throw AgentAPIError.unavailable }
             func call(_ operation: String, _ arguments: [String: JSONValue], id: UUID = UUID()) async throws -> JSONValue {
@@ -84,6 +85,25 @@ import Darwin
             }
             guard try await call("auth.login", arguments, id: loginID) == status else { throw AgentAPIError.unavailable }
             print("BROWSER_NATIVE_RETRY=pass")
+            let list = try await call("browser.observe", ["session_ref": .string(session), "view_id": .string("items")])
+            guard let row = list["records"]?.array?.first, row["fields"]?.array?.first?["value"]?.string == "Example report",
+                  let element = row["actions"]?.array?.first?["element_ref"]?.string else { throw AgentAPIError.unavailable }
+            func finishAction(_ value: JSONValue) async throws {
+                guard let reference = value["operation_ref"]?.string else { throw AgentAPIError.unavailable }
+                for _ in 0..<40 {
+                    let result = try await call("operation.get", ["operation_ref": .string(reference)])
+                    if result["state"]?.string == "succeeded" { return }
+                    guard result["state"]?.string == "running" else { throw AgentAPIError.unavailable }
+                    try await Task.sleep(for: .milliseconds(500))
+                }
+                throw AgentAPIError.unavailable
+            }
+            try await finishAction(call("browser.click", ["session_ref": .string(session), "element_ref": .string(element)]))
+            let detail = try await call("browser.extract", ["session_ref": .string(session), "schema_id": .string("item_detail")])
+            guard detail["records"]?.array?.first?["fields"]?.array?.contains(where: { $0["name"]?.string == "status" && $0["value"]?.string == "Ready" }) == true else { throw AgentAPIError.unavailable }
+            try await finishAction(call("browser.navigate", ["session_ref": .string(session), "route_id": .string("items")]))
+            guard try await call("browser.observe", ["session_ref": .string(session), "view_id": .string("items")])["records"]?.array?.count == 1 else { throw AgentAPIError.unavailable }
+            print("BROWSER_SAFE_WORKFLOW=pass")
             _ = try await call("session.close", ["session_ref": .string(session)])
             guard try await call("operation.get", ["operation_ref": .string(operation)])["session_ref"] == .null else { throw AgentAPIError.unavailable }
             print("BROWSER_NATIVE_CLOSE=pass")

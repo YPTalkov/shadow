@@ -6,6 +6,7 @@ enum AuthenticationStage: String, CaseIterable, Sendable {
 }
 
 enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnknown }
+enum ProtectedBrowserResult: Sendable { case view(SafeBrowserView), completed }
 
 /// Implementations own their independent worker/egress deadlines. revoke()
 /// closes authority synchronously; VM destruction may finish asynchronously.
@@ -13,6 +14,7 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
     func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult
     func renew(sequence: Int) async throws
     func checkLease() throws
+    func perform(_ operation: String, arguments: [String: JSONValue]) async throws -> ProtectedBrowserResult
     func revoke()
 }
 
@@ -34,12 +36,15 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
         var resolved = false
         var ready = false
         var sequence = 0
+        var operations = Set<String>()
+        var actionBusy = false
         init(reference: String, operation: String, caller: EnrolledAgent, account: ConsentAccount, adapter: QualifiedAdapterPolicy, grant: String, driver: any ProtectedBrowserDriver) {
             self.reference = reference; self.operation = operation; self.caller = caller
             self.account = account; self.adapter = adapter; self.grant = grant; self.driver = driver
+            self.operations = [operation]
         }
     }
-    public var availableOperations: [String] { ["auth.login", "operation.get", "operation.cancel", "session.close"] }
+    public var availableOperations: [String] { ["auth.login", "operation.get", "operation.cancel", "session.close", "browser.observe", "browser.extract", "browser.navigate", "browser.click"] }
     private let access: AccessCoordinator
     private let journal: OperationJournal
     private let resolve: @MainActor (ConsentAccount, String) async throws -> PrivateCredential
@@ -78,9 +83,12 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
         case "operation.get": return .operation(try status(request.arguments["operation_ref"]!.string!, caller: caller))
         case "operation.cancel":
             let reference = request.arguments["operation_ref"]!.string!
-            _ = try journal.status(reference, caller: caller)
-            if let session = active, session.operation == reference, session.caller == caller { terminate(session, state: .cancelled) }
+            let current = try journal.status(reference, caller: caller)
+            if let session = active, session.operations.contains(reference), session.caller == caller,
+               [.running, .pendingOwner, .needsOwnerAction].contains(current.state) { terminate(session, state: .cancelled) }
             return .operation(try status(reference, caller: caller))
+        case "browser.observe", "browser.extract": return try await read(request, caller: caller)
+        case "browser.navigate", "browser.click": return .operation(try action(request, caller: caller))
         case "session.close":
             guard let session = active, session.reference == request.arguments["session_ref"]?.string, session.caller == caller else { throw ConsentError.invalidReference }
             terminate(session, state: .cancelled)
@@ -91,13 +99,66 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
 
     public func status(_ reference: String, caller: EnrolledAgent) throws -> AgentOperationStatus {
         let status = try journal.status(reference, caller: caller)
-        if let session = active, session.operation == reference, session.caller == caller, session.ready {
+        if let session = active, session.operations.contains(reference), session.caller == caller, session.ready, !session.actionBusy {
             do {
                 try check(session)
                 return AgentOperationStatus(reference: reference, state: status.state, session: session.reference, error: status.error)
             } catch { terminate(session, state: .cancelled) }
         }
         return status
+    }
+
+    private func sessionForAction(_ request: AgentRequest, caller: EnrolledAgent) throws -> (Session, ProtectedAction) {
+        guard let session = active, session.reference == request.arguments["session_ref"]?.string, session.caller == caller else { throw ConsentError.invalidReference }
+        guard session.ready else { throw AgentAPIError.sessionClosed }
+        guard !session.actionBusy else { throw AgentAPIError.rateLimited }
+        guard let action = ProtectedAction(rawValue: String(request.operation.dropFirst("browser.".count))) else { throw AgentAPIError.invalidRequest }
+        try checkAction(session, action: action)
+        return (session, action)
+    }
+
+    private func checkAction(_ session: Session, action: ProtectedAction) throws {
+        try check(session)
+        guard !session.adapter.resourceOrigins.isEmpty, session.adapter.actions.contains(action),
+              session.adapter.resourceOrigins.allSatisfy({ access.authorize(grantRef: session.grant, caller: session.caller, account: session.account.id, adapterID: session.adapter.id, origin: $0, action: action, session: session.id) }) else { throw AgentAPIError.consentRequired }
+    }
+
+    private func read(_ request: AgentRequest, caller: EnrolledAgent) async throws -> AgentDomainResult {
+        let (session, action) = try sessionForAction(request, caller: caller)
+        session.actionBusy = true
+        defer { session.actionBusy = false }
+        do {
+            let result = try await session.driver.perform(request.operation, arguments: request.arguments.filter { $0.key != "session_ref" })
+            try checkAction(session, action: action)
+            guard case .view(let view) = result else { throw AgentAPIError.unavailable }
+            return .view(view)
+        } catch {
+            terminate(session, state: .cancelled)
+            throw error
+        }
+    }
+
+    private func action(_ request: AgentRequest, caller: EnrolledAgent) throws -> AgentOperationStatus {
+        if let prior = try journal.prior(request, caller: caller) { return try status(prior.reference, caller: caller) }
+        let (session, action) = try sessionForAction(request, caller: caller)
+        guard session.operations.count < 256 else { throw AgentAPIError.rateLimited }
+        let receipt = try journal.begin(request, caller: caller)
+        session.operations.insert(receipt.status.reference)
+        session.actionBusy = true
+        session.task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try checkAction(session, action: action)
+                try journal.markSubmitted(receipt.status.reference, caller: caller)
+                let result = try await session.driver.perform(request.operation, arguments: request.arguments.filter { $0.key != "session_ref" })
+                try checkAction(session, action: action)
+                guard case .completed = result else { throw AgentAPIError.unavailable }
+                try journal.finish(receipt.status.reference, caller: caller, state: .succeeded)
+                session.actionBusy = false
+                session.task = nil
+            } catch { terminate(session, state: .failed) }
+        }
+        return receipt.status
     }
 
     private func login(_ request: AgentRequest, caller: EnrolledAgent) throws -> AgentOperationStatus {
@@ -188,9 +249,11 @@ enum BrowserAuthenticationResult: Sendable { case succeeded, failed, outcomeUnkn
         session.driver.revoke()
         session.task?.cancel(); session.task = nil
         do {
-            let current = try journal.status(session.operation, caller: session.caller)
-            if [.running, .pendingOwner, .needsOwnerAction].contains(current.state) {
-                try journal.finish(session.operation, caller: session.caller, state: state, error: state == .failed ? .unavailable : nil)
+            for operation in session.operations {
+                let current = try journal.status(operation, caller: session.caller)
+                if [.running, .pendingOwner, .needsOwnerAction].contains(current.state) {
+                    try journal.finish(operation, caller: session.caller, state: state, error: state == .failed ? .unavailable : nil)
+                }
             }
         } catch {
             // Receipt persistence failed. Close all authority; never retry the

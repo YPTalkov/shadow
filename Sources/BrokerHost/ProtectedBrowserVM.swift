@@ -90,6 +90,20 @@ private actor ControlWriter {
         if writer != nil { try await send(.object(["kind": .string("lease"), "sequence": .integer(Int64(sequence)), "ttl_ms": .integer(10000)])) }
     }
 
+    func perform(_ operation: String, arguments: [String: JSONValue]) async throws -> ProtectedBrowserResult {
+        try checkLease()
+        try await send(.object(["kind": .string("action"), "operation": .string(operation), "arguments": .object(arguments)]))
+        let message = try await receive()
+        if let fields = message.object, Set(fields.keys) == ["kind", "view"], fields["kind"]?.string == "view", let view = fields["view"] {
+            guard view["view_id"]?.string == (arguments["view_id"] ?? arguments["schema_id"])?.string else { throw AgentAPIError.unsupportedView }
+            return .view(try SafeBrowserView(view, adapterID: adapter.id))
+        }
+        if message == .object(["kind": .string("completed")]) { return .completed }
+        if let fields = message.object, Set(fields.keys) == ["kind", "code"], fields["kind"]?.string == "error",
+           let code = fields["code"]?.string.flatMap(AgentAPIError.init(rawValue:)) { throw code }
+        throw AgentAPIError.unavailable
+    }
+
     func revoke() {
         guard !revoked else { return }
         revoked = true

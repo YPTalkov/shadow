@@ -9,8 +9,9 @@ from .control import ControlChannel
 from .egress import ConnectProxy
 from .errors import BrowserFailure, Code
 from .output_gate import OutputGate
+from .observations import Observations
 from .watchdog import Watchdog, WorkerLease
-from site_adapters import login_spec
+from site_adapters import login_spec, manifest
 
 CHROMIUM_ARGUMENTS = [
     "--disable-breakpad", "--disable-crash-reporter", "--crash-dumps-dir=/opt/shadow/crashes",
@@ -41,6 +42,8 @@ async def run(channel: ControlChannel, lease: WorkerLease):
             if set(command) != {"kind", "adapter_id"} or command["kind"] != "login":
                 raise BrowserFailure(Code.INVALID_REQUEST)
             spec = login_spec(command["adapter_id"])
+            adapter = manifest(command["adapter_id"])
+            protected_values = []
 
             async def authorize(stage):
                 await channel.send({"kind": "authorize", "stage": stage})
@@ -52,19 +55,41 @@ async def run(channel: ControlChannel, lease: WorkerLease):
                 message = await channel.receive()
                 if set(message) != {"kind", "username", "password", "totp"} or message.pop("kind") != "credential":
                     raise BrowserFailure(Code.INVALID_REQUEST)
-                return Credential(**message)
+                credential = Credential(**message)
+                protected_values.extend(value for value in (credential.password, credential.totp) if value)
+                return credential
 
             result = await AtomicAuthenticator(page, gate, spec).run(resolve, authorize)
             await channel.send({"kind": "authentication", "state": result.state})
             if result.state != "succeeded":
                 return
-            # U10 adds only manifest-defined safe actions here. The controller
-            # cannot expose page objects, selectors, JS, screenshots or cookies.
+            observations = Observations(page, gate, adapter, protected_values)
             while True:
                 command = await channel.receive(timeout=None)
                 if command == {"kind": "close"}:
                     return
-                raise BrowserFailure(Code.INVALID_REQUEST)
+                if set(command) != {"kind", "operation", "arguments"} or command["kind"] != "action" or type(command["arguments"]) is not dict:
+                    raise BrowserFailure(Code.INVALID_REQUEST)
+                operation, arguments = command["operation"], command["arguments"]
+                try:
+                    if operation == "browser.observe" and set(arguments) == {"view_id"}:
+                        view = await observations.observe(arguments["view_id"])
+                        await channel.send({"kind": "view", "view": view})
+                    elif operation == "browser.extract" and set(arguments) == {"schema_id"}:
+                        view = await observations.observe(arguments["schema_id"])
+                        await channel.send({"kind": "view", "view": view})
+                    elif operation == "browser.click" and set(arguments) == {"element_ref"}:
+                        await observations.click(arguments["element_ref"])
+                        await channel.send({"kind": "completed"})
+                    elif operation == "browser.navigate" and set(arguments) == {"route_id"}:
+                        await observations.navigate(arguments["route_id"])
+                        await channel.send({"kind": "completed"})
+                    else:
+                        raise BrowserFailure(Code.INVALID_REQUEST)
+                except BrowserFailure as error:
+                    # Fixed code only, then destroy the unsupported session.
+                    await channel.send({"kind": "error", "code": error.code.value})
+                    return
     finally:
         gate.close()
         proxy.close()

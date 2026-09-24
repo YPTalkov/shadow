@@ -9,12 +9,7 @@ MAX_FRAME = 65_536
 SCHEMA = json.loads(files("agent_tools").joinpath("agent-api-v1.schema.json").read_text())
 RESPONSE_SCHEMA = json.loads(files("agent_tools").joinpath("agent-result-v1.schema.json").read_text())
 OPERATIONS = {choice["properties"]["operation"]["const"]: choice["properties"]["arguments"] for choice in SCHEMA["oneOf"]}
-ERROR_CODES = frozenset({
-    "invalid_request", "unsupported_version", "rate_limited", "invalid_cursor", "invalid_reference",
-    "capability_unavailable", "response_limit", "unavailable", "account_consent_required",
-    "vault_locked", "caller_unavailable", "catalog_consent_required", "unsupported_adapter",
-    "stale_request", "invalid_scope", "request_conflict", "transport_unavailable",
-})
+ERROR_CODES = frozenset(RESPONSE_SCHEMA["properties"]["error"]["properties"]["code"]["enum"])
 
 
 class AgentError(Exception):

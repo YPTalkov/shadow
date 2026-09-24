@@ -12,6 +12,7 @@ import PolicyCore
     var resume: CheckedContinuation<Void, Never>?
     func renew(sequence: Int) async throws { if revoked { throw AgentAPIError.unavailable } }
     func checkLease() throws { if revoked { throw AgentAPIError.unavailable } }
+    func perform(_ operation: String, arguments: [String: JSONValue]) async throws -> ProtectedBrowserResult { throw AgentAPIError.capabilityUnavailable }
     func revoke() { revoked = true; resume?.resume(); resume = nil }
     func authenticate(authorize: @escaping @MainActor (AuthenticationStage) throws -> Void, resolve: @escaping @MainActor () async throws -> PrivateCredential) async throws -> BrowserAuthenticationResult {
         for stage in AuthenticationStage.allCases {

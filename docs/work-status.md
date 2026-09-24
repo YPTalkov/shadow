@@ -13,7 +13,7 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 | U7 | Partial | Private consumer, native restriction publication, pinned executable enrollment, Keychain HMAC custody, refresh/removal, conflicts and source/editor conformance implemented. Browser-interruption and packaged qualification remain. |
 | U8 | Partial | Shared request/result contracts, native API, CLI/MCP/PTC parity (29 tests), native authority tests and actual Linux Codex MCP pass. Protected jobs and production VM enrollment remain. |
 | U9 | Partial | Production VM driver, private credential delivery, root supervisor and renewable worker/egress leases implemented. Real native-vault-to-VM HTTPS login, idempotent retry, post-submit revocation and 12-second host suspension pass. Owner runtime wiring and full integrated attack matrix remain in U6/U13/U14. |
-| U10 | In progress | Synthetic login manifest installed; implementing safe list/detail views and owner challenges. Owner-selected site requested. |
+| U10 | In progress | Native-to-VM list/detail/extract/navigation workflow and 18 hostile-view cases pass. Schemas, opaque document-bound links, cookie/credential projection and transport parity implemented. Owner challenges, SSO/TOTP and owner-selected site qualification remain. |
 | U11 | Pending | Submit receipts recover unknown outcomes without replay; retained-grant retries recover status. Remaining: integrated lifecycle, independent monitors, challenge cancellation and audit. |
 | U12 | Pending | Backup/restore and recovery UI. |
 | U13 | Pending | Packaged cross-boundary security and end-to-end suite. |
