@@ -9,11 +9,18 @@ description = "Local credential vault and protected agent tools"
 requires-python = "==3.12.*"
 dependencies = ["pykeepass==4.2.0"]
 
+[project.scripts]
+shadow = "agent_tools.cli:main"
+shadow-mcp = "agent_tools.mcp_server:main"
+
 [dependency-groups]
+browser = [
+    "playwright==1.63.0",
+]
 dev = ["pytest==8.4.2"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["vault_worker", "agent_tools", "browser_worker", "guest_transport"]
+packages = ["vault_worker", "agent_tools", "browser_worker", "guest_transport", "shadow_common", "site_adapters"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

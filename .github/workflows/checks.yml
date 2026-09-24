@@ -1,0 +1,40 @@
+name: Source checks
+
+on:
+  push:
+    branches: [main, feat/standalone-credential-vault]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          # Bootstrap only: GitHub's arm64 cache lacks CPython 3.12.13.
+          python-version: '3.12'
+      - name: Install locked development environment
+        run: |
+          python -m pip install uv==0.12.18
+          uv python install 3.12.13
+          uv sync --frozen --python 3.12.13
+      - name: Build native host and protocol fixture
+        run: swift build
+      - name: Check generated contracts
+        run: |
+          uv run --frozen python scripts/sync-agent-contract.py --check
+          uv run --frozen python scripts/sync-site-adapters.py --check
+      - name: Native synthetic tests
+        run: bash scripts/test-swift.sh
+      - name: Python synthetic tests
+        run: uv run --frozen pytest
+
+# VM, native UI, KeePassXC and installation qualification run on the owner's
+# pinned Apple Silicon host. A green hosted job does not pass those release gates.

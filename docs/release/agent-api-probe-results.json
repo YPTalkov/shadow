@@ -1,0 +1,31 @@
+{
+  "manifest": {
+    "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
+    "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "23e22d2b728e895b94a00f76527eb82a9662f61b2cd8b1faf5de1709c262a5fe",
+      "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    }
+  },
+  "profiles": {
+    "agent": {
+      "passed": true,
+      "checks": {
+        "UID": "0",
+        "NETWORK_DEVICES": "lo",
+        "SWAP_DEVICES": "0",
+        "HOST_HOME_PRESENT": "no",
+        "SHARED_MOUNTS": "0",
+        "IP_ROUTE_COUNT": "0",
+        "VSOCK_ROLE_BOUNDARY": "pass",
+        "DIRECT_EGRESS": "denied",
+        "BASE_DISK": "readonly",
+        "LINUX_CODEX_RELAY": "pass",
+        "CODEX_TOOL_RESULT": "pass",
+        "CODEX_MCP_RESULT": "pass",
+        "GUEST_AGENT_API": "pass"
+      }
+    }
+  }
+}

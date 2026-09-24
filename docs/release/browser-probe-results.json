@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "exit_code": 0,
+  "manifest": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "probe",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "7f6ed37d1c45a5f03ba8962d33cb7bbf4e706bd97f9ffc143d875181c8a32adf",
+      "disk": "da24082d49a922f5992a348a7bdb19287cc9ac97baf7422c64225ca35d8b844b"
+    }
+  },
+  "checks": {
+    "BROWSER_PRIVATE_DISPLAY": "ready",
+    "BROWSER_NETWORK_DEVICES": "lo",
+    "BROWSER_DRM_DEVICES": "by-path,card0,renderD128",
+    "BROWSER_INPUT_DEVICES": "2",
+    "BROWSER_UID": "1001",
+    "BROWSER_ENGINE": "pass",
+    "BROWSER_VERSION": "153.0.8010.12",
+    "BROWSER_ATOMIC_AUTH": "pass",
+    "BROWSER_AUTH_SCENARIOS": "10",
+    "BROWSER_SAFE_VIEWS": "pass",
+    "BROWSER_SAFE_VIEW_SCENARIOS": "18",
+    "BROWSER_CHALLENGES": "pass",
+    "BROWSER_CHALLENGE_SCENARIOS": "9",
+    "BROWSER_HTTPS_AUTH": "pass",
+    "BROWSER_CRASH_DUMPS": "absent",
+    "BROWSER_HTTPS_SUBMISSIONS": "1",
+    "BROWSER_CONSOLE_CANARIES": "absent"
+  },
+  "tested_at": "2026-09-24T05:54:19.395203+00:00",
+  "host": {
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "executable_sha256": "1cd442271b89da24cde994c1de3cecc7fd5acd80bf553119d048963761f564a2"
+}

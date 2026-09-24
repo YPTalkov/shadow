@@ -1,0 +1,53 @@
+{
+  "time_utc": "2026-09-24T06:02:57.937349+00:00",
+  "macos": "26.6.2",
+  "architecture": "arm64",
+  "binary_sha256": "0b8ac0b85386d48bc0cffc23cc891173ed4a663579ed4c3b762cca2e51c5e68c",
+  "image": {
+    "profile": "agent",
+    "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
+    "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "981488940f704e0bc6e53de60e9c32d4d020d24fbf86bdea2ccafc22fb4d95fb",
+      "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    }
+  },
+  "live_provider": false,
+  "real_credentials": false,
+  "results": [
+    {
+      "model": "gpt-6-sol",
+      "checks": {
+        "AGENT_CODEX_SHELL_MCP": true,
+        "AGENT_ROOT_BOUNDARY": true,
+        "AGENT_TASK_TEARDOWN": true,
+        "AGENT_LOCK_REJECTS_OLD_BOOT": true,
+        "AGENT_RUNTIME": true
+      },
+      "passed": true
+    },
+    {
+      "model": "gpt-6-luna",
+      "checks": {
+        "AGENT_CODEX_SHELL_MCP": true,
+        "AGENT_ROOT_BOUNDARY": true,
+        "AGENT_TASK_TEARDOWN": true,
+        "AGENT_LOCK_REJECTS_OLD_BOOT": true,
+        "AGENT_RUNTIME": true
+      },
+      "passed": true
+    },
+    {
+      "model": "gpt-6-astra",
+      "checks": {
+        "AGENT_CODEX_SHELL_MCP": true,
+        "AGENT_ROOT_BOUNDARY": true,
+        "AGENT_TASK_TEARDOWN": true,
+        "AGENT_LOCK_REJECTS_OLD_BOOT": true,
+        "AGENT_RUNTIME": true
+      },
+      "passed": true
+    }
+  ]
+}

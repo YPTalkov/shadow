@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "exit_code": 0,
+  "manifest": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "probe",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "e438c292f0e24f5ca158d566747b872239de382e02c0f4fbf7495de75d368b34",
+      "disk": "c0708153801e8d8dd127668e9fa9e17ea86cc605c9ecc13ede0e2b55f4d124ec"
+    }
+  },
+  "checks": {
+    "BROWSER_PRIVATE_DISPLAY": "ready",
+    "BROWSER_NETWORK_DEVICES": "lo",
+    "BROWSER_DRM_DEVICES": "by-path,card0,renderD128",
+    "BROWSER_INPUT_DEVICES": "2",
+    "BROWSER_UID": "1001",
+    "BROWSER_ENGINE": "pass",
+    "BROWSER_VERSION": "153.0.8010.12",
+    "BROWSER_ATOMIC_AUTH": "pass",
+    "BROWSER_AUTH_SCENARIOS": "10",
+    "BROWSER_SAFE_VIEWS": "pass",
+    "BROWSER_SAFE_VIEW_SCENARIOS": "18",
+    "BROWSER_HTTPS_AUTH": "pass",
+    "BROWSER_CRASH_DUMPS": "absent",
+    "BROWSER_HTTPS_SUBMISSIONS": "1",
+    "BROWSER_CONSOLE_CANARIES": "absent"
+  }
+}

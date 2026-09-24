@@ -1,0 +1,19 @@
+# Runtime isolation status
+
+This is the original U2 qualification record. See [package qualification](package-status.md) for the current production images and integrated runtime results.
+
+The native configuration code builds separate agent and browser VM profiles. Both have zero virtual network devices, zero host directory shares, one virtio socket device, and one read-only disk device. Only the browser role has a graphics scanout. The three image inputs are SHA-256 checked before configuration. Synthetic tests reject an image changed after its expected hash was recorded.
+
+The `vm-config-probe` developer executable was ad-hoc signed with `packaging/virtualization.entitlements` on the Apple Silicon target Mac. On 2026-09-23, `VZVirtualMachineConfiguration.validate()` returned `configuration_valid` for both device profiles using zero-filled synthetic kernel, ramdisk, and image files. This establishes entitlement/configuration availability, **not a Linux boot or isolation boundary**. The [Apple Virtualization configuration documentation](https://developer.apple.com/documentation/virtualization/vzvirtualmachineconfiguration) requires the virtualization entitlement and describes its separate network, socket, and directory-sharing device lists.
+
+## Actual Linux and Codex qualification
+
+The synthetic image now boots Alpine 3.22.6 / Linux 6.12.110, with Python 3.12.14 and the pinned Linux ARM64 musl Codex CLI 0.156.1. Both device profiles booted and shut down cleanly on the target Mac. The root process in each guest verified loopback as the only network interface, no IP routes, no swap, no host home, no shared mounts, denied direct TCP/UDP egress to public/private/link-local destinations, and failed disk writes. The host disk hash remained unchanged after the write attack.
+
+InstanceChannels registers different host-created socket listeners for the agent and browser roles. Listener acceptance verifies the native socket-device object, listener object and allowed destination port, with a maximum of eight connections. Revocation shuts down both original and duplicated descriptors. Root in each actual guest reached its own role's ports and was denied the other role's ports and unconfigured host ports.
+
+The actual Linux Codex client completed a synthetic streamed shell tool call and returned its output through guest loopback HTTP → vsock → native framing → native relay policy. No subscription token entered the guest. The fixture's provider responses are synthetic; this does not establish live ChatGPT subscription compatibility. Initial integration failed because Codex sends client metadata and additional informational headers; the relay now accepts and strips those fields while still rejecting authentication/routing overrides.
+
+Reproduction is documented in [the image instructions](../../images/README.md). Exact image hashes and bounded outcomes are in [the probe record](vm-probe-results.json). The image is a developer fixture; it is not the production browser/agent image. Initial failures also caught the EFI kernel wrapper, missing initramfs applet links, and the distinction between opening a block device and actually writing it.
+
+The [HTTPS gateway component](egress-status.md) passed native scope/revocation/idle-expiry tests and a certificate-verified request from the actual browser VM. That milestone had 19 passing native tests and did not connect a vault secret to a browser. Later protected-session, watchdog, production-image and packaged results are linked from the current package record. An unrestricted same-user agent remains outside the supported deployment.

@@ -11,6 +11,10 @@ import io
 from pykeepass import PyKeePass
 from pykeepass.kdbx_parsing.kdbx4 import kdf_uuids
 from pykeepass.pykeepass import BLANK_DATABASE_LOCATION, BLANK_DATABASE_PASSWORD
+from pykeepass.kdbx_parsing import KDBX
+from construct import ChecksumError
+
+from .bounded_kdbx import BOUNDED_KDBX, BoundedKDBXError, validate_outer_header
 
 
 MAX_FILE_BYTES = 128 * 1024 * 1024
@@ -34,19 +38,23 @@ def inspect_header(data: bytes | PyKeePass) -> dict[str, object]:
         if not data or len(data) > MAX_FILE_BYTES:
             raise ManagedKDBXError("invalid_vault")
         try:
-            db = PyKeePass(io.BytesIO(data), decrypt=False)
+            validate_outer_header(data)
+            header = KDBX.header.parse(data).value
+        except BoundedKDBXError as error:
+            raise ManagedKDBXError(error.code) from None
         except Exception:
             raise ManagedKDBXError("invalid_vault") from None
     else:
-        db = data
+        header = data.kdbx.header.value
     try:
-        if db.version != (4, 0):
+        version = (header.major_version, header.minor_version)
+        if version != (4, 0):
             raise ManagedKDBXError("unsupported_profile")
-        parameters = db.kdbx.header.value.dynamic_header.kdf_parameters.data.dict
+        parameters = header.dynamic_header.kdf_parameters.data.dict
         profile = {
-            "version": db.version,
-            "cipher": db.encryption_algorithm,
-            "kdf": db.kdf_algorithm,
+            "version": version,
+            "cipher": header.dynamic_header.cipher_id.data,
+            "kdf": "argon2id" if parameters["$UUID"].value == kdf_uuids["argon2id"] else "unsupported",
             "memory": parameters["M"].value,
             "iterations": parameters["I"].value,
             "lanes": parameters["P"].value,
@@ -56,6 +64,8 @@ def inspect_header(data: bytes | PyKeePass) -> dict[str, object]:
         if profile["memory"] < MANAGED_MEMORY_BYTES or profile["iterations"] < MANAGED_ITERATIONS or profile["lanes"] < MANAGED_LANES:
             raise ManagedKDBXError("unsupported_profile")
         if profile["cipher"] != "aes256" or profile["kdf"] != "argon2id":
+            raise ManagedKDBXError("unsupported_profile")
+        if parameters["V"].value != 19 or len(parameters["S"].value) != 32:
             raise ManagedKDBXError("unsupported_profile")
         return profile
     except ManagedKDBXError:
@@ -89,9 +99,25 @@ def create_managed(password: str) -> bytes:
 def load_managed(data: bytes, password: str) -> PyKeePass:
     inspect_header(data)
     try:
-        return PyKeePass(io.BytesIO(data), password=password)
+        # Construct an ordinary library object with our bounded read pipeline.
+        # Saving still uses the pinned library's unchanged serializer/crypto.
+        db = object.__new__(PyKeePass)
+        db.filename = io.BytesIO(data)
+        db._password = password
+        db._keyfile = None
+        db.kdbx = BOUNDED_KDBX.parse(data, password=password, keyfile=None, transformed_key=None, decrypt=True)
+        if len(db.entries) > 50_000 or len(db.groups) > 10_000:
+            raise ManagedKDBXError("limit_exceeded")
+        identities = [entry.uuid for entry in db.entries] + [group.uuid for group in db.groups]
+        if len(identities) != len(set(identities)):
+            raise ManagedKDBXError("invalid_vault")
+        return db
+    except ManagedKDBXError:
+        raise
+    except BoundedKDBXError as error:
+        raise ManagedKDBXError(error.code) from None
     except Exception as error:
         # The caller only sees a fixed code. Do not forward library diagnostics.
-        if error.__class__.__name__ == "CredentialsError":
+        if isinstance(error, ChecksumError) and error.path == "(parsing) -> body -> cred_check":
             raise ManagedKDBXError("invalid_credentials") from None
         raise ManagedKDBXError("invalid_vault") from None

@@ -1,0 +1,14 @@
+{
+  "built_at": "2026-09-24T06:06:56.738562+00:00",
+  "source_commit": "0aec05736d749de6cb2e65f40e372b00caddf5a9",
+  "source_dirty": false,
+  "macos": "26.6.2",
+  "architecture": "arm64",
+  "signing": "local-ad-hoc",
+  "notarized": false,
+  "executable_sha256": "42bed03d09e43ca7f12228e987512a92adb4b647f4668e813edd5a0f793c44f3",
+  "inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047",
+  "resource_files": 1680,
+  "resource_links": 4,
+  "bytes": 914021286
+}

@@ -1,0 +1,141 @@
+{
+  "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+  "indexes": [
+    {
+      "suite": "noble",
+      "component": "main",
+      "sha256": "4a1901e6124fb0a111f5dffc8f5c14474f449e2ecfa71f2eaf0b29917edb53f9"
+    },
+    {
+      "suite": "noble",
+      "component": "universe",
+      "sha256": "6df230cf5cfebcbd59e4e2713b8eed07dc0aaed66fb471ebf046cb70ccb07275"
+    },
+    {
+      "suite": "noble-updates",
+      "component": "main",
+      "sha256": "4bb0118f2f3aa35c9b0c3dcf68f141ace437e11440e5ac57fd855e709421380e"
+    },
+    {
+      "suite": "noble-updates",
+      "component": "universe",
+      "sha256": "10c5a824ae3a8a81201691f9403f803881859a1a2351d1d4e475cba678e3c8db"
+    },
+    {
+      "suite": "noble-security",
+      "component": "main",
+      "sha256": "fc90bd488a4efbe309b6925077dcb87c6b1d960c1a24a7c58fa1737be611debf"
+    },
+    {
+      "suite": "noble-security",
+      "component": "universe",
+      "sha256": "e0802badde93791c10951dd7def8c29dc81527c69cee165564a93a2964419b4b"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "keyboard-configuration",
+      "version": "1.226ubuntu1.1",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/c/console-setup/keyboard-configuration_1.226ubuntu1.1_all.deb",
+      "sha256": "efd41eab2266789a7b43b2f36516860c28f19920d0c656b3cdc2647547f61330",
+      "filename": "keyboard-configuration_1.226ubuntu1.1_all.deb",
+      "depends": "debconf (>= 0.5) | debconf-2.0, liblocale-gettext-perl, xkb-data (>= 2.41~), xkb-data (<< 2.41A)"
+    },
+    {
+      "name": "libinput-bin",
+      "version": "1.25.0-1ubuntu3.7",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libi/libinput/libinput-bin_1.25.0-1ubuntu3.7_arm64.deb",
+      "sha256": "235d962b16d220750c60f04ce06afeddd6a88c52da4d9407f67b6d56a774197e",
+      "filename": "libinput-bin_1.25.0-1ubuntu3.7_arm64.deb",
+      "depends": "libc6 (>= 2.38), libevdev2 (>= 1.10.0), libudev1 (>= 183), libwacom9 (>= 2.0.0)"
+    },
+    {
+      "name": "libinput10",
+      "version": "1.25.0-1ubuntu3.7",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libi/libinput/libinput10_1.25.0-1ubuntu3.7_arm64.deb",
+      "sha256": "c83589bfe0be2e7d219a77966f80aed9acbdda55e93478fa1a0f509b5292aaf8",
+      "filename": "libinput10_1.25.0-1ubuntu3.7_arm64.deb",
+      "depends": "libc6 (>= 2.38), libevdev2 (>= 1.10.0), libmtdev1t64 (>= 1.1.0), libudev1 (>= 183), libwacom9 (>= 2.0.0), libinput-bin (>= 1.25.0-1ubuntu3.7)"
+    },
+    {
+      "name": "liblocale-gettext-perl",
+      "version": "1.07-6ubuntu5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libl/liblocale-gettext-perl/liblocale-gettext-perl_1.07-6ubuntu5_arm64.deb",
+      "sha256": "e947228f1659b8252993a8ba59908b9f171fbef8b5dade338aa7a1bacc8150fe",
+      "filename": "liblocale-gettext-perl_1.07-6ubuntu5_arm64.deb",
+      "depends": "libc6 (>= 2.17)"
+    },
+    {
+      "name": "libmtdev1t64",
+      "version": "1.1.6-1.1build1",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mtdev/libmtdev1t64_1.1.6-1.1build1_arm64.deb",
+      "sha256": "82822446ba3ca3afcfdafa7648b22686d058bacf1b0c7576668733b545d688d9",
+      "filename": "libmtdev1t64_1.1.6-1.1build1_arm64.deb",
+      "depends": "libc6 (>= 2.17)"
+    },
+    {
+      "name": "libnss3-tools",
+      "version": "2:3.98-1ubuntu0.2",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/n/nss/libnss3-tools_3.98-1ubuntu0.2_arm64.deb",
+      "sha256": "02d5f5e9d7a40d79fd23448b3f4016b7c83113f2b0df9f55efa16a39be33ce97",
+      "filename": "libnss3-tools_3.98-1ubuntu0.2_arm64.deb",
+      "depends": "libc6 (>= 2.34), libnspr4 (>= 2:4.34), libnss3 (>= 2:3.94), zlib1g (>= 1:1.1.4)"
+    },
+    {
+      "name": "libpciaccess0",
+      "version": "0.17-3ubuntu0.24.04.3",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libp/libpciaccess/libpciaccess0_0.17-3ubuntu0.24.04.3_arm64.deb",
+      "sha256": "de9d01338c4f0b1215526a76427fc18164f9af2c84dda56a4f52dceda37dfd7d",
+      "filename": "libpciaccess0_0.17-3ubuntu0.24.04.3_arm64.deb",
+      "depends": "libc6 (>= 2.38), zlib1g (>= 1:1.1.4)"
+    },
+    {
+      "name": "libwacom-common",
+      "version": "2.10.0-2",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libw/libwacom/libwacom-common_2.10.0-2_all.deb",
+      "sha256": "416099ceae870ec8ce13f875dfdf71f81a884b3641e404a74eafd378c15a78b4",
+      "filename": "libwacom-common_2.10.0-2_all.deb",
+      "depends": ""
+    },
+    {
+      "name": "libwacom9",
+      "version": "2.10.0-2",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libw/libwacom/libwacom9_2.10.0-2_arm64.deb",
+      "sha256": "b3f966d819a14690963357a1b9a46ce6da6540cb690783fae461d5d885fc3846",
+      "filename": "libwacom9_2.10.0-2_arm64.deb",
+      "depends": "libc6 (>= 2.38), libevdev2 (>= 1.6.901), libglib2.0-0t64 (>= 2.68.0), libgudev-1.0-0 (>= 146), libwacom-common"
+    },
+    {
+      "name": "libxcvt0",
+      "version": "0.1.2-1build1",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcvt/libxcvt0_0.1.2-1build1_arm64.deb",
+      "sha256": "9aa87ded9d8d236d3d5e908e0c0c9f630bab9512b13c9df22447f35fb3060c70",
+      "filename": "libxcvt0_0.1.2-1build1_arm64.deb",
+      "depends": "libc6 (>= 2.17)"
+    },
+    {
+      "name": "udev",
+      "version": "255.4-1ubuntu8.17",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/systemd/udev_255.4-1ubuntu8.17_arm64.deb",
+      "sha256": "6d297d239ff19b21e34be4ec8a17400cc7e48257bdbb556a95a0b277a9ff818e",
+      "filename": "udev_255.4-1ubuntu8.17_arm64.deb",
+      "depends": "libacl1 (>= 2.2.23), libblkid1 (>= 2.37.2), libc6 (>= 2.38), libcap2 (>= 1:2.10), libkmod2 (>= 15), libselinux1 (>= 3.1~), systemd | systemd-standalone-sysusers | systemd-sysusers, libudev1 (= 255.4-1ubuntu8.17), systemd-dev (>= 255.4-1ubuntu8.17)"
+    },
+    {
+      "name": "xserver-xorg-core",
+      "version": "2:21.1.12-1ubuntu1.5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/x/xorg-server/xserver-xorg-core_21.1.12-1ubuntu1.5_arm64.deb",
+      "sha256": "397e330fcb1284e0c188e61056ad5253bdf82ff308b518df9c3c892849457bc8",
+      "filename": "xserver-xorg-core_21.1.12-1ubuntu1.5_arm64.deb",
+      "depends": "xserver-common (>= 2:21.1.12-1ubuntu1.5), keyboard-configuration, udev (>= 149), libegl1, libaudit1 (>= 1:2.2.1), libc6 (>= 2.38), libdbus-1-3 (>= 1.9.14), libdrm2 (>= 2.4.107-5~), libepoxy0 (>= 1.5.4), libgbm1 (>= 17.1.0~rc2), libgcrypt20 (>= 1.10.0), libgl1, libpciaccess0 (>= 0.12.902), libpixman-1-0 (>= 0.30.0), libselinux1 (>= 3.1~), libsystemd0, libudev1 (>= 183), libunwind8, libxau6 (>= 1:1.0.9), libxcvt0 (>= 0.1.0), libxdmcp6, libxfont2 (>= 1:2.0.1), libxshmfence1"
+    },
+    {
+      "name": "xserver-xorg-input-libinput",
+      "version": "1.4.0-1ubuntu24.04.1",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/x/xserver-xorg-input-libinput/xserver-xorg-input-libinput_1.4.0-1ubuntu24.04.1_arm64.deb",
+      "sha256": "ef74f6657051291d642a7001ffe7e0565e6d9bae5af6f15df708367818e93675",
+      "filename": "xserver-xorg-input-libinput_1.4.0-1ubuntu24.04.1_arm64.deb",
+      "depends": "libc6 (>= 2.17), libinput10 (>= 1.23.0), xorg-input-abi-24, xserver-xorg-core (>= 2:21.1.1)"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ Date: 2026-09-23. Target: Apple Silicon macOS 26.6.2. This is a development qual
 | keepassxc-edit-reopen | KeePassXC 2.7.12 edited title; PyKeePass 4.2.0 preserved group, password, and protected custom property; KeePassXC reopened the subsequent save |
 | protocol-major | Public/private schema version 1 checked; guest package import scan passed |
 
-`uv run --frozen pytest tests/compat`: 7 passed. `swift build`: passed. `swift test`: blocked because this machine's Command Line Tools installation does not provide the `Testing` or `XCTest` modules.
+`uv run --frozen pytest tests/compat`: 7 passed. `swift build`: passed. `swift test` required explicit Command Line Tools Testing framework and runtime paths; the resulting Swift test passed. The repeatable command is `sh scripts/test-swift.sh`.
 
 | Artifact | SHA-256 |
 |---|---|

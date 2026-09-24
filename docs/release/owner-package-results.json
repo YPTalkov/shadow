@@ -1,0 +1,15 @@
+{
+  "tested_at": "2026-09-24T06:07:30.059337+00:00",
+  "host": {
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "harness_sha256": "d2eee25fab27ac3092b7e7beee0881fc2c8dcefea46e48538d2ce9abb2d49e93",
+  "package_inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047",
+  "package_executable_sha256": "42bed03d09e43ca7f12228e987512a92adb4b647f4668e813edd5a0f793c44f3",
+  "checks": {
+    "owner_ui_flow": true,
+    "persistent_canaries_absent": true
+  },
+  "passed": true
+}

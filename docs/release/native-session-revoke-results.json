@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "exit_code": 0,
+  "manifest": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "qualification",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "57c52cf35e16424ef103857dc7d7527015f43f3e1d0e7936062f96a99e37c562",
+      "disk": "c0708153801e8d8dd127668e9fa9e17ea86cc605c9ecc13ede0e2b55f4d124ec"
+    }
+  },
+  "checks": {
+    "BROWSER_NATIVE_REVOKE": "pass",
+    "BROWSER_SESSION": "pass",
+    "BROWSER_HTTPS_SUBMISSIONS": "1",
+    "BROWSER_CONSOLE_CANARIES": "absent"
+  }
+}

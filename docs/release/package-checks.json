@@ -1,0 +1,23 @@
+{
+  "time_utc": "2026-09-24T06:07:51.634855+00:00",
+  "inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047",
+  "checks": {
+    "relocated_signature_inventory": true,
+    "relocated_python": true,
+    "worker_signature_rejected": true,
+    "worker_inventory_rejected_after_resign": true,
+    "agent_image_signature_rejected": true,
+    "agent_image_inventory_rejected_after_resign": true,
+    "browser_image_signature_rejected": true,
+    "browser_image_inventory_rejected_after_resign": true,
+    "adapter_signature_rejected": true,
+    "adapter_inventory_rejected_after_resign": true,
+    "added_python_file_rejected": true,
+    "unqualified_macos_rejected": true,
+    "unqualified_architecture_rejected": true,
+    "external_interpreter_rejected": true,
+    "restored_bundle_valid": true,
+    "no_runtime_bytecode_written": true
+  },
+  "passed": true
+}

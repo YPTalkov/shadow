@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "exit_code": 0,
+  "manifest": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "qualification",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "e01fb497d0c05acea30d548b3127bec126122d0ec71173efaa800ed0f098ab5d",
+      "disk": "da24082d49a922f5992a348a7bdb19287cc9ac97baf7422c64225ca35d8b844b"
+    }
+  },
+  "checks": {
+    "TWO_VM_SEPARATE_CONSENT": "pass",
+    "TWO_VM_SOURCE_REMOVAL": "pass",
+    "TWO_VM_MODEL_CANARIES": "absent",
+    "TWO_VM_TEARDOWN": "pass",
+    "TWO_VM_RESULT": "pass",
+    "BROWSER_HTTPS_SUBMISSIONS": "1",
+    "BROWSER_CONSOLE_CANARIES": "absent"
+  },
+  "tested_at": "2026-09-24T06:01:10.450065+00:00",
+  "host": {
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "executable_sha256": "0b8ac0b85386d48bc0cffc23cc891173ed4a663579ed4c3b762cca2e51c5e68c",
+  "agent_manifest": {
+    "profile": "agent",
+    "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
+    "release_sha256": "0a39889547d6fb1b0dc124f4baceadd08fef7a72708d5c92774a207f2bc41728",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "981488940f704e0bc6e53de60e9c32d4d020d24fbf86bdea2ccafc22fb4d95fb",
+      "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    }
+  },
+  "package_inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047"
+}
