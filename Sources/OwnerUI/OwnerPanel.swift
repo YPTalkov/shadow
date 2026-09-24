@@ -48,9 +48,10 @@ public struct OwnerPanel: View {
                 HStack(spacing: 10) {
                     Image(systemName: model.unlocked ? "lock.open.fill" : "lock.fill").foregroundStyle(model.unlocked ? .green : .secondary)
                     Text(model.status).fontWeight(.semibold)
+                    if let day = model.backupStatus?.lastDay { Text("Backup \(day)").font(.caption).foregroundStyle(.secondary) }
                     if model.busy { ProgressView().controlSize(.small) }
                     Spacer()
-                    if model.unlocked || model.busy || model.editorReview != nil {
+                    if model.unlocked || model.busy || model.editorReview != nil || model.restoreReview != nil {
                         Button(model.busy ? "Cancel and lock" : "Lock vault") { model.lockImmediately() }
                             .accessibilityLabel("Lock vault and end access")
                     }
@@ -62,7 +63,7 @@ public struct OwnerPanel: View {
                     case .importCSV: importView
                     case .access: AgentAccessView(access: model.access)
                     case .sources: SourcesView(model: model)
-                    case .recovery: recovery
+                    case .recovery: RecoveryView(model: model)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 if let message = model.message {
@@ -93,6 +94,12 @@ public struct OwnerPanel: View {
         Group {
             if model.editor != nil {
                 editorView
+            } else if model.restoreReview != nil {
+                VStack(spacing: 16) {
+                    Text("An encrypted restore is awaiting review.").font(.headline)
+                    Button("Review in Recovery") { destination = .recovery }
+                    Button("Cancel restore and stay locked") { model.lockImmediately() }
+                }.padding(24)
             } else if model.unlocked {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -240,33 +247,6 @@ public struct OwnerPanel: View {
                 }
             }
         }
-    }
-
-    private var recovery: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Encrypted recovery files").font(.title2.bold())
-            Text("The vault and its retained backups remain local. An older file cannot restore previous agent authority.").foregroundStyle(.secondary)
-            Button("Show encrypted vault folder") { NSWorkspace.shared.open(model.configuration.vaultDirectory) }
-            Text("The guided restore workflow is still under implementation. This development build must contain synthetic credentials only.").font(.callout).foregroundStyle(.secondary)
-            Divider()
-            Text("Local diagnostics").font(.headline)
-            Text("Review seven days of event codes and counts before exporting. The report contains no account names, websites or credential values.").foregroundStyle(.secondary)
-            Button("Review diagnostic report") { model.prepareDiagnostics() }
-            if let report = model.diagnostics {
-                ScrollView { Text(report.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 220)
-                Button("Export reviewed report…") {
-                    let panel = NSSavePanel()
-                    panel.allowedContentTypes = [.json]
-                    panel.nameFieldStringValue = "shadow-diagnostics.json"
-                    Task { @MainActor in
-                        if await panel.begin() == .OK, let url = panel.url { model.exportDiagnostics(to: url) }
-                    }
-                }
-            } else if !model.diagnosticsAvailable {
-                Text("Diagnostics are unavailable.").font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }.padding(24)
     }
 
     private func columnPicker(_ label: String, value: Binding<String>) -> some View {

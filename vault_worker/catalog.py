@@ -82,6 +82,10 @@ class Catalog:
         self._items = tuple(sorted(items, key=lambda item: (_normalized(item.title), _normalized(item.username), item.id)))
         self._cursors: dict[str, tuple[float, str, frozenset[str], int]] = {}
 
+    @property
+    def count(self) -> int:
+        return len(self._items)
+
     @classmethod
     def from_vault(cls, vault: PyKeePass) -> Catalog:
         items: list[CatalogItem] = []

@@ -107,7 +107,7 @@ def test_disk_full_and_batch_limit_leave_previous_generation(source, monkeypatch
     messages = frames(enrollment, epoch, [("group", group()), ("item", item())])
     def disk_full(*args):
         raise OSError(28, "synthetic disk full")
-    monkeypatch.setattr(store, "_write_exclusive", disk_full)
+    monkeypatch.setattr("os.write", disk_full)
     with pytest.raises(IngestError, match="storage_unavailable"):
         run(consumer, messages)
     assert store.vault_path.read_bytes() == before and store.open(MASTER)

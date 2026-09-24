@@ -20,6 +20,8 @@ from typing import Callable, Protocol
 from pykeepass import PyKeePass
 
 from .profile import ManagedKDBXError, create_managed, load_managed
+from .encrypted_files import read_file, sync_directory
+from .backups import Backups
 
 
 class VaultStoreError(Exception):
@@ -112,20 +114,7 @@ class VaultStore:
 
     def _read_live(self) -> bytes:
         try:
-            identity = self.vault_path.lstat()
-            if not stat.S_ISREG(identity.st_mode) or identity.st_mode & 0o077 or identity.st_nlink != 1:
-                raise VaultStoreError("unsafe_path")
-            fd = os.open(self.vault_path, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                opened = os.fstat(fd)
-                if (opened.st_dev, opened.st_ino) != (identity.st_dev, identity.st_ino):
-                    raise VaultStoreError("unsafe_path")
-                data = os.read(fd, 128 * 1024 * 1024 + 1)
-            finally:
-                os.close(fd)
-            return data
-        except VaultStoreError:
-            raise
+            return read_file(self.vault_path)
         except OSError:
             raise VaultStoreError("unsafe_path") from None
 
@@ -186,6 +175,7 @@ class VaultStore:
                 finally:
                     db.close()
                 self.anchor.advance(digest)
+                Backups(self.backup_dir).preserve(data, previous=False)
         except VaultStoreError:
             raise
         except (OSError, sqlite3.Error, ManagedKDBXError):
@@ -246,7 +236,8 @@ class VaultStore:
                     new_data = output.getvalue()
                     load_managed(new_data, password)
                     new_digest = _digest(new_data)
-                    self._write_exclusive(self.backup_dir / f"previous-{secrets.token_hex(16)}.kdbx", old_data)
+                    backups = Backups(self.backup_dir)
+                    previous = backups.preserve(old_data, previous=True)
                     fault("after_backup")
                     generation = secrets.token_hex(16)
                     with db:
@@ -278,6 +269,7 @@ class VaultStore:
                     fault("after_ledger")
                     self.anchor.advance(new_digest)
                     fault("after_anchor")
+                    backups.rotate(previous=previous)
                     return None
                 finally:
                     db.close()
@@ -288,6 +280,27 @@ class VaultStore:
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
+
+    def backup(self) -> dict:
+        """The independent anchor qualifies bytes; no decrypted vault is needed."""
+        try:
+            self._ensure_dirs()
+            with self._writer_lock():
+                data = self._read_live()
+                db = self._connect()
+                try:
+                    self._verify_current(db, data)
+                    self._check_editor(db, None)
+                    backups = Backups(self.backup_dir)
+                    daily = backups.preserve(data, previous=False)
+                    backups.rotate(daily=daily)
+                    return backups.status()
+                finally:
+                    db.close()
+        except VaultStoreError:
+            raise
+        except OSError:
+            raise VaultStoreError("storage_unavailable") from None
 
     @staticmethod
     def _write_all(fd: int, data: bytes) -> None:
@@ -310,8 +323,4 @@ class VaultStore:
 
     @staticmethod
     def _fsync_dir(path: Path) -> None:
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        sync_directory(path)

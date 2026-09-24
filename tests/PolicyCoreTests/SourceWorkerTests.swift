@@ -63,11 +63,11 @@ import PolicyCore
     await reopened.lock()
 }
 
-private func sourceMessage(_ instance: UUID, _ epoch: UUID, _ batch: UUID, _ sequence: Int, _ kind: String, _ payload: [String: Any]) throws -> Data {
+func sourceMessage(_ instance: UUID, _ epoch: UUID, _ batch: UUID, _ sequence: Int, _ kind: String, _ payload: [String: Any]) throws -> Data {
     try JSONSerialization.data(withJSONObject: ["contract_major": 1, "source_instance_id": instance.uuidString.lowercased(), "channel_epoch": epoch.uuidString.lowercased(), "batch_id": batch.uuidString.lowercased(), "producer_sequence": sequence, "kind": kind, "payload": payload])
 }
 
-private func sendSyntheticBatch(_ worker: PrivateVaultWorker, instance: UUID, epoch: UUID, generation: Int, includeItem: Bool) async throws -> SourceFrameResult {
+func sendSyntheticBatch(_ worker: PrivateVaultWorker, instance: UUID, epoch: UUID, generation: Int, includeItem: Bool) async throws -> SourceFrameResult {
     let batch = UUID()
     var messages: [(String, [String: Any])] = [
         ("begin", ["previous_generation": generation, "started_at": "2026-09-24T00:00:00Z", "mode": "snapshot"]),

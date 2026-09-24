@@ -104,6 +104,53 @@ Task { @MainActor in
         stage = "reopen"
         await owner.open(password: "synthetic-ui-master-password", create: false)
         guard owner.unlocked, owner.accounts.count == 4 else { throw OwnerConfigurationError.unavailable }
+        stage = "backup_export"
+        let exported = root.appendingPathComponent("owner-export.kdbx")
+        await owner.exportBackup(to: exported)
+        guard FileManager.default.fileExists(atPath: exported.path) else { throw OwnerConfigurationError.unavailable }
+        stage = "restore_preview"
+        await owner.previewRestore(path: exported, password: "synthetic-ui-master-password")
+        guard owner.restoreReview?.accounts == 4, owner.restoreReview?.mirrored == 1, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        show(OwnerPanel(model: owner, initialDestination: .recovery), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-restore-review.jpg"))
+        stage = "restore_commit"
+        await owner.commitRestore(acknowledgeUnknownHistory: false)
+        guard !owner.unlocked, owner.restoreReview == nil else { throw OwnerConfigurationError.unavailable }
+        await owner.open(password: "synthetic-ui-master-password", create: false)
+        guard owner.unlocked, owner.accounts.count == 4, owner.access.grants.isEmpty,
+              owner.accounts.first(where: { $0.sourceKind == "mirrored" })?.presence == "unknown" else { throw OwnerConfigurationError.unavailable }
+        stage = "missing_history_review"
+        await owner.lock()
+        try FileManager.default.removeItem(at: configuration.vaultDirectory.appendingPathComponent("restrictions.sqlite"))
+        await owner.previewRestore(path: exported, password: "synthetic-ui-master-password")
+        guard owner.restoreReview?.historyUnknown == true else { throw OwnerConfigurationError.unavailable }
+        show(OwnerPanel(model: owner, initialDestination: .recovery), in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        try snapshot(window, to: evidence.appendingPathComponent("owner-restore-uncertain.jpg"))
+        await owner.commitRestore(acknowledgeUnknownHistory: false)
+        guard owner.restoreReview != nil else { throw OwnerConfigurationError.unavailable }
+        await owner.commitRestore(acknowledgeUnknownHistory: true)
+        guard owner.restoreReview == nil, !owner.unlocked else { throw OwnerConfigurationError.unavailable }
+        stage = "independent_keepassxc_recovery"
+        // Test-only inspection of the owner export, with the app locked and the
+        // master password sent through a pipe, never a process argument.
+        await owner.lock()
+        let recovered = try await Task.detached {
+            let process = Process(), input = Pipe(), output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/Applications/KeePassXC.app/Contents/MacOS/keepassxc-cli")
+            process.arguments = ["ls", "-q", "-R", exported.path]
+            process.standardInput = input
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            try input.fileHandleForWriting.write(contentsOf: Data("synthetic-ui-master-password\n".utf8))
+            try input.fileHandleForWriting.close()
+            let listed = try output.fileHandleForReading.readToEnd() ?? Data()
+            process.waitUntilExit()
+            return process.terminationStatus == 0 && String(decoding: listed, as: UTF8.self).contains("Demo workspace")
+        }.value
+        guard recovered else { throw OwnerConfigurationError.unavailable }
         await owner.lock()
         show(OwnerPanel(model: owner), in: window)
         try await Task.sleep(for: .milliseconds(500))

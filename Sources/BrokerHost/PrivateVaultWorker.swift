@@ -102,6 +102,18 @@ public struct OwnerEditorResult: Codable, Sendable {
     public let lateChange: Bool
 }
 
+public struct OwnerBackupStatus: Decodable, Sendable {
+    public let lastDay: String?
+    public let dailyCount: Int
+}
+
+public struct OwnerRestoreReview: Sendable {
+    public let reviewID: String
+    public let accounts: Int
+    public let mirrored: Int
+    public let historyUnknown: Bool
+}
+
 private final class WorkerTermination: @unchecked Sendable {
     private let mutex = NSLock()
     private var expected = false
@@ -119,6 +131,7 @@ public actor PrivateVaultWorker {
     private var sequence = 0
     private var busy = false
     private var closed = false
+    private var restoreReview: RestorePreview?
     private let termination = WorkerTermination()
     public nonisolated var isRunning: Bool { process.isRunning && termination.unexpectedExit() }
     package nonisolated var processIdentifier: Int32 { process.processIdentifier }
@@ -225,8 +238,16 @@ public actor PrivateVaultWorker {
                     }
                 }
                 if let event = events[id] {
-                    item.restrictionEvent = event.id.uuidString.lowercased()
-                    if item.sourceKind != "mirrored" { item.sourceKind = "mirrored"; item.presence = "unknown" }
+                    let current = event.id.uuidString.lowercased()
+                    if item.sourceKind != "mirrored" || item.restrictionEvent != current {
+                        item.sourceKind = "mirrored"
+                        item.presence = switch event.kind {
+                        case .deletedAtSource: "deleted_at_source"
+                        case .accessLost: "access_lost"
+                        case .historyUnknown, .staleMirror: "unknown"
+                        }
+                    }
+                    item.restrictionEvent = current
                 }
                 items.append(item)
             }
@@ -292,7 +313,36 @@ public actor PrivateVaultWorker {
         try await request("editor.cancel", payload: EditorCancel(discard: discard))
     }
 
-    private func request<P: Encodable & Sendable, R: Decodable & Sendable>(_ kind: String, payload: P) async throws -> R {
+    public func backup() async throws -> OwnerBackupStatus {
+        try await request("backup.create", payload: Empty())
+    }
+
+    public func exportBackup(to path: URL) async throws {
+        let result: State = try await request("backup.export", payload: PathRequest(path: path.path))
+        guard result.state == "exported" else { throw VaultWorkerError.unavailable }
+    }
+
+    public func previewRestore(path: URL, password: String) async throws -> OwnerRestoreReview {
+        restoreReview = nil
+        let location = try path.resourceValues(forKeys: [.volumeIsLocalKey, .isUbiquitousItemKey])
+        guard location.volumeIsLocal == true, location.isUbiquitousItem != true else { throw VaultWorkerError.reported("unsafe_path") }
+        let result: RestorePreview = try await request("recovery.preview", payload: RestoreSelection(path: path.path, password: password))
+        guard UUID(uuidString: result.reviewId) != nil, (0...50_000).contains(result.accounts),
+              result.mirroredIds.count <= 50_000, Set(result.mirroredIds).count == result.mirroredIds.count,
+              result.mirroredIds.allSatisfy({ UUID(uuidString: $0) != nil }) else { throw VaultWorkerError.unavailable }
+        restoreReview = result
+        return OwnerRestoreReview(reviewID: result.reviewId, accounts: result.accounts, mirrored: result.mirroredIds.count, historyUnknown: restrictions.needsRecoveryReview())
+    }
+
+    public func commitRestore(reviewID: String, acknowledgeUnknownHistory: Bool) async throws {
+        guard let review = restoreReview, review.reviewId == reviewID else { throw VaultWorkerError.reported("preview_required") }
+        restoreReview = nil
+        let authorization = RestoreAuthorization(reviewID: reviewID, mirrored: review.mirroredIds.compactMap(UUID.init(uuidString:)), acknowledgeUnknown: acknowledgeUnknownHistory)
+        let result: State = try await request("recovery.commit", payload: EditorCommit(reviewId: reviewID), restore: authorization)
+        guard result.state == "restored" else { throw VaultWorkerError.unavailable }
+    }
+
+    private func request<P: Encodable & Sendable, R: Decodable & Sendable>(_ kind: String, payload: P, restore: RestoreAuthorization? = nil) async throws -> R {
         guard !closed else { throw VaultWorkerError.unavailable }
         guard !busy else { throw VaultWorkerError.busy }
         busy = true
@@ -303,7 +353,7 @@ public actor PrivateVaultWorker {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try encoder.encode(Envelope(channelEpoch: epoch, sequence: current, kind: kind, payload: payload))
         let channel = transport, authority = anchor, channelEpoch = epoch, restrictions = restrictions, invalidate = onInvalidate
-        let task = Task.detached { try await Self.exchange(data, channel: channel, anchor: authority, restrictions: restrictions, invalidate: invalidate, epoch: channelEpoch, sequence: current) }
+        let task = Task.detached { try await Self.exchange(data, channel: channel, anchor: authority, restrictions: restrictions, invalidate: invalidate, epoch: channelEpoch, sequence: current, restore: restore) }
         do {
             let reply = try await withTaskCancellationHandler {
                 try await task.value
@@ -330,8 +380,9 @@ public actor PrivateVaultWorker {
         }
     }
 
-    private nonisolated static func exchange(_ request: Data, channel: FramedChannel, anchor: GenerationAnchor, restrictions: NativeRestrictions, invalidate: @escaping @MainActor @Sendable ([UUID]) -> Void, epoch: String, sequence: Int) async throws -> Reply {
+    private nonisolated static func exchange(_ request: Data, channel: FramedChannel, anchor: GenerationAnchor, restrictions: NativeRestrictions, invalidate: @escaping @MainActor @Sendable ([UUID]) -> Void, epoch: String, sequence: Int, restore: RestoreAuthorization?) async throws -> Reply {
         try channel.write(request)
+        var reconciled = false
         for _ in 0..<4096 {
             let data = try channel.read(timeout: 60)
             guard let message = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -340,7 +391,14 @@ public actor PrivateVaultWorker {
                   message["sequence"] as? Int == sequence, let kind = message["kind"] as? String,
                   let payload = message["payload"] as? [String: Any] else { throw VaultWorkerError.unavailable }
             if kind == "result" || kind == "error" {
+                if kind == "result", restore != nil, !reconciled { throw VaultWorkerError.unavailable }
                 return Reply(kind: kind, payload: try JSONSerialization.data(withJSONObject: payload))
+            }
+            if kind == "recovery.reconcile", let restore, !reconciled, Set(payload.keys) == ["review_id"], payload["review_id"] as? String == restore.reviewID {
+                try restrictions.reconcileRestore(mirrored: restore.mirrored, acknowledgeUnknownHistory: restore.acknowledgeUnknown)
+                reconciled = true
+                try nativeAcknowledgement(channel: channel, epoch: epoch, sequence: sequence)
+                continue
             }
             if kind == "mutation.invalidate", Set(payload.keys) == ["accounts"], let raw = payload["accounts"] as? [String], raw.count <= 256 {
                 let accounts = raw.compactMap(UUID.init(uuidString:))
@@ -398,6 +456,9 @@ public actor PrivateVaultWorker {
     private struct Empty: Encodable, Sendable {}
     private struct EditorCommit: Encodable, Sendable { let reviewId: String }
     private struct EditorCancel: Encodable, Sendable { let discard: Bool }
+    private struct RestoreSelection: Encodable, Sendable { let path: String; let password: String }
+    private struct RestorePreview: Decodable, Sendable { let reviewId: String; let accounts: Int; let mirroredIds: [String] }
+    private struct RestoreAuthorization: Sendable { let reviewID: String; let mirrored: [UUID]; let acknowledgeUnknown: Bool }
     private struct SourceConfiguration: Encodable, Sendable { let instance: String; let label: String; let epoch: String; let capabilities: SourceCapabilities; let digestKey: String }
     private struct SourceFrame: Encodable, Sendable { let instance: String; let frame: String }
     private struct SourceInstance: Encodable, Sendable { let instance: String }

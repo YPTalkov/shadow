@@ -25,6 +25,8 @@ public final class OwnerVaultModel {
     public var validRowsOnly = false
     public private(set) var editor: OwnerEditorStatus?
     public private(set) var editorReview: OwnerEditorReview?
+    public private(set) var restoreReview: OwnerRestoreReview?
+    public private(set) var backupStatus: OwnerBackupStatus?
     public private(set) var sources: [EnrolledSource] = []
     public private(set) var sourceSummaries: [OwnerSourceSummary] = []
     public private(set) var sourceCandidate: SourceCandidate?
@@ -67,6 +69,7 @@ public final class OwnerVaultModel {
 
     public func checkIdle() async {
         access.expire()
+        if (unlocked || editorReview != nil || restoreReview != nil) && clock() - lastInteraction >= 15 * 60 { lockImmediately(reason: .idle) }
         if clock() - lastMaintenance >= 60 {
             lastMaintenance = clock()
             do { try operationJournal?.maintain() }
@@ -75,12 +78,13 @@ public final class OwnerVaultModel {
                 lockImmediately()
                 message = "The operation journal is unavailable. Existing encrypted files were preserved."
             }
+            let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+            if !busy, editor == nil, restoreReview == nil, vaultExists, backupStatus?.lastDay != today { await backupNow() }
         }
-        if (unlocked || editorReview != nil) && clock() - lastInteraction >= 15 * 60 { lockImmediately(reason: .idle) }
     }
 
     public func open(password: String, create: Bool) async {
-        guard !busy, !unlocked, editor == nil else { return }
+        guard !busy, !unlocked, editor == nil, restoreReview == nil else { return }
         busy = true
         message = nil
         status = create ? "Creating vault…" : "Unlocking…"
@@ -93,6 +97,7 @@ public final class OwnerVaultModel {
             if create { try await client.create(password: password) } else { try await client.unlock(password: password) }
             let items = try await client.catalogSnapshot()
             let summaries = try await client.sources(instances: sources.map(\.id))
+            let backup = try await client.backup()
             guard generation == epoch else { return }
             accounts = items
             access.openVault(accounts: Self.consentAccounts(items))
@@ -106,6 +111,7 @@ public final class OwnerVaultModel {
             }
             nextOffset = nil
             sourceSummaries = summaries
+            backupStatus = backup
             unlocked = true
             status = "Unlocked"
             record(.vaultOpened)
@@ -127,7 +133,8 @@ public final class OwnerVaultModel {
 
     /// Revoke on the event's current MainActor turn, before scheduling teardown.
     public func lockImmediately(reason: OwnerLockReason = .owner) {
-        guard !isLocking else { return }
+        // A repeated lock also cancels operations waiting for prior cleanup.
+        guard !isLocking else { epoch += 1; return }
         isLocking = true
         epoch += 1
         sourceRuntime.stop()
@@ -147,14 +154,14 @@ public final class OwnerVaultModel {
         selectedCSV = nil
         preview = nil
         editorReview = nil
+        restoreReview = nil
         sourceCandidate = nil
         sourceSummaries = []
         mapping = OwnerCSVMapping(title: "", url: "", username: "", password: "")
-        let generation = epoch
         if reason == .workerStopped { message = "The vault worker stopped. Unlock again before continuing." }
         lockTask = Task { [weak self] in
             await client?.lock()
-            guard let self, generation == self.epoch else { return }
+            guard let self else { return }
             self.isLocking = false; self.busy = false
             self.lockTask = nil
             if self.editor != nil {
@@ -454,6 +461,84 @@ public final class OwnerVaultModel {
         } catch {
             diagnosticsAvailable = false
             message = "The diagnostic report could not be read. Existing encrypted files were preserved."
+        }
+    }
+
+    public func backupNow() async {
+        guard !busy, editor == nil, restoreReview == nil, vaultExists else { return }
+        busy = true
+        let generation = epoch, wasUnlocked = unlocked
+        defer { if generation == epoch { busy = false } }
+        do {
+            let client: PrivateVaultWorker
+            if let existing = worker { client = existing } else { client = try await launchWorker() }
+            guard generation == epoch else { await client.lock(); return }
+            worker = client
+            let result = try await client.backup()
+            guard generation == epoch else { return }
+            backupStatus = result
+            record(.backupCompleted)
+            if !wasUnlocked { worker = nil; await client.lock() }
+        } catch {
+            guard generation == epoch else { return }
+            await lock()
+            message = "An encrypted backup could not be verified. Existing files were preserved; check Recovery before continuing."
+        }
+    }
+
+    public func exportBackup(to path: URL) async {
+        await perform { client in
+            try await client.exportBackup(to: path)
+            return { self.record(.backupCompleted); self.message = "An encrypted copy was exported. Keep its master password separately." }
+        }
+    }
+
+    public func previewRestore(path: URL, password: String) async {
+        guard !busy, editor == nil, !QualifiedEditor.isRunning else {
+            message = "Finish the editing checkout and close KeePassXC before restoring."
+            return
+        }
+        lockImmediately()
+        let generation = epoch
+        await finishLock()
+        guard generation == epoch else { return }
+        busy = true
+        message = nil
+        status = "Checking encrypted recovery file…"
+        noteInteraction()
+        defer { if generation == epoch { busy = false } }
+        do {
+            let client = try await launchWorker()
+            guard generation == epoch else { await client.lock(); return }
+            worker = client
+            let review = try await client.previewRestore(path: path, password: password)
+            guard generation == epoch else { return }
+            restoreReview = review
+            status = "Review restore"
+        } catch {
+            guard generation == epoch else { return }
+            await lock()
+            message = Self.explain(error)
+        }
+    }
+
+    public func commitRestore(acknowledgeUnknownHistory: Bool) async {
+        guard !busy, !unlocked, let review = restoreReview, let client = worker else { return }
+        guard !review.historyUnknown || acknowledgeUnknownHistory else { return }
+        guard !QualifiedEditor.isRunning else { message = "Close KeePassXC before restoring."; return }
+        busy = true
+        noteInteraction()
+        let generation = epoch
+        do {
+            try await client.commitRestore(reviewID: review.reviewID, acknowledgeUnknownHistory: acknowledgeUnknownHistory)
+            guard generation == epoch else { return }
+            record(.restoreCompleted)
+            await lock()
+            message = "Restore completed. Your previous encrypted files were preserved. Unlock with the selected file's password; all agent access requires fresh approval."
+        } catch {
+            guard generation == epoch else { return }
+            await lock()
+            message = Self.explain(error)
         }
     }
 

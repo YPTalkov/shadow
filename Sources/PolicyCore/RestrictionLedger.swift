@@ -40,10 +40,25 @@ public final class RestrictionLedger {
     private var fileIdentity: NSNumber?
     private static let genesis = hash("shadow-restrictions-v1")
 
-    public init(path: URL, anchor: GenerationAnchor) throws {
+    public convenience init(path: URL, anchor: GenerationAnchor) throws {
+        try self.init(path: path, anchor: anchor, recoveredEvents: nil)
+    }
+
+    /// Owner recovery only. Bootstrap the complete unknown history before
+    /// changing the independent anchor. A caller publishes this new file later.
+    public static func recover(at path: URL, anchor: GenerationAnchor, accounts: [UUID]) throws -> RestrictionLedger {
+        guard accounts.count <= 50_000, Set(accounts).count == accounts.count else { throw RestrictionLedgerError.storageUnavailable }
+        return try RestrictionLedger(path: path, anchor: anchor, recoveredEvents: accounts.map {
+            RestrictionEvent(id: UUID(), account: $0, kind: .historyUnknown)
+        })
+    }
+
+    private init(path: URL, anchor: GenerationAnchor, recoveredEvents: [RestrictionEvent]?) throws {
         self.file = path
         self.anchor = anchor
         let existed = FileManager.default.fileExists(atPath: path.path)
+        if recoveredEvents != nil && existed { throw RestrictionLedgerError.unsafePath }
+        let initialAnchor = try anchor.read()
         guard !path.hasDirectoryPath else { throw RestrictionLedgerError.unsafePath }
         let parent = path.deletingLastPathComponent()
         var details = stat()
@@ -66,7 +81,7 @@ public final class RestrictionLedger {
                   permissions & 0o077 == 0 else {
                 throw RestrictionLedgerError.unsafePath
             }
-        } else if try anchor.read() != nil {
+        } else if initialAnchor != nil && recoveredEvents == nil {
             throw RestrictionLedgerError.recoveryRequired
         }
         if !existed {
@@ -81,15 +96,19 @@ public final class RestrictionLedger {
         }
         do {
             try execute("PRAGMA synchronous=FULL")
+            try execute("PRAGMA fullfsync=ON")
             try execute("PRAGMA journal_mode=DELETE")
-            try execute("CREATE TABLE IF NOT EXISTS restriction_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, account TEXT NOT NULL, kind TEXT NOT NULL, previous TEXT NOT NULL, head TEXT NOT NULL)")
             if !existed {
+                try execute("CREATE TABLE restriction_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, account TEXT NOT NULL, kind TEXT NOT NULL, previous TEXT NOT NULL, head TEXT NOT NULL)")
+            }
+            if !existed {
+                let head = try insertRecoveryEvents(recoveredEvents ?? [])
                 let fd = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
                 guard fd >= 0 else { throw RestrictionLedgerError.storageUnavailable }
                 let synced = fsync(fd)
                 Darwin.close(fd)
                 guard synced == 0 else { throw RestrictionLedgerError.storageUnavailable }
-                try anchor.advance(expected: nil, to: Self.genesis)
+                try anchor.advance(expected: initialAnchor, to: head)
             }
             fileIdentity = try FileManager.default.attributesOfItem(atPath: path.path)[.systemFileNumber] as? NSNumber
             try verify()
@@ -98,6 +117,27 @@ public final class RestrictionLedger {
             database = nil
             throw error
         }
+    }
+
+    private func insertRecoveryEvents(_ events: [RestrictionEvent]) throws -> String {
+        var head = Self.genesis
+        try execute("BEGIN IMMEDIATE")
+        do {
+            let statement = try prepare("INSERT INTO restriction_event (id, account, kind, previous, head) VALUES (?, ?, ?, ?, ?)")
+            defer { sqlite3_finalize(statement) }
+            for event in events {
+                let next = Self.hash("\(head)|\(event.id.uuidString)|\(event.account.uuidString)|\(event.kind.rawValue)")
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                for (index, value) in [event.id.uuidString, event.account.uuidString, event.kind.rawValue, head, next].enumerated() {
+                    try bind(value, at: Int32(index + 1), to: statement)
+                }
+                guard sqlite3_step(statement) == SQLITE_DONE else { throw RestrictionLedgerError.storageUnavailable }
+                head = next
+            }
+            try execute("COMMIT")
+        } catch { try? execute("ROLLBACK"); throw error }
+        return head
     }
 
     deinit {
@@ -117,7 +157,7 @@ public final class RestrictionLedger {
     }
 
     public func appendBatch(_ events: [RestrictionEvent]) throws {
-        guard events.count <= 256 else { throw RestrictionLedgerError.storageUnavailable }
+        guard events.count <= 50_000 else { throw RestrictionLedgerError.storageUnavailable }
         let previous = try verify()
         var known = Dictionary(uniqueKeysWithValues: try rows().map { ($0.id, ($0.account, $0.kind)) })
         var inserted: [(RestrictionEvent, String, String)] = []

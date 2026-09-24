@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-24",
+  "scope": "synthetic-development-recovery",
+  "python_tests_passed": 74,
+  "swift_test_functions_passed": 11,
+  "native_restore_history_cases_passed": 6,
+  "native_ui_probe": "passed",
+  "independent_keepassxc_inspection": "passed",
+  "keepassxc_version": "2.7.12",
+  "owner_ui_probe_sha256": "e5f4b628c4654d126a117ca787507311d559dbb768adb12a48f8dd9350d335b7",
+  "packaged_qualification": "pending",
+  "independent_security_review": "pending"
+}

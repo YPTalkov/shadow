@@ -19,6 +19,8 @@ from .ingest import IngestSession, SourceCapabilities, SourceEnrollment, IngestE
 from .conflicts import resolve as resolve_conflict
 from . import encrypted_metadata
 from .credentials import resolve as resolve_credential
+from .recovery import Restore
+from .encrypted_files import durable_copy
 
 MAX_MESSAGE = 2 * 1024 * 1024  # Private host channel; includes a bounded source frame.
 ERROR_CODES = {
@@ -166,6 +168,7 @@ class Worker:
         self.selected: SelectedCSV | None = None
         self.stopping = False
         self.editor: EditorHandoff | None = None
+        self.restore: Restore | None = None
         self.sources: dict[str, IngestSession] = {}
         self.source_authority = NativeSourceAuthority(channel)
         self.catalog_snapshot = None
@@ -192,9 +195,30 @@ class Worker:
                 raise ProtocolError
             self.store = VaultStore(Path(path), NativeAnchor(self.channel))
             self.editor = EditorHandoff(self.store)
+            self.restore = Restore(self.store)
             return {"state": "locked"}
         if self.store is None:
             raise ProtocolError
+        if kind == "recovery.preview":
+            if set(payload) != {"path", "password"} or any(not isinstance(value, str) or not value for value in payload.values()):
+                raise ProtocolError
+            self.password = None
+            self.close_sources()
+            self.close_selection()
+            return self.restore.preview(Path(payload["path"]), payload["password"])
+        if kind == "recovery.commit":
+            if set(payload) != {"review_id"} or not isinstance(payload["review_id"], str) or self.password is not None:
+                raise ProtocolError
+            return self.restore.commit(payload["review_id"], reconcile=lambda: self.source_authority._acknowledge("recovery.reconcile", {"review_id": payload["review_id"]}))
+        if kind == "recovery.cancel":
+            if payload:
+                raise ProtocolError
+            self.restore.cancel()
+            return {"state": "locked"}
+        if kind == "backup.create":
+            if payload:
+                raise ProtocolError
+            return self.store.backup()
         if kind == "editor.status":
             if payload:
                 raise ProtocolError
@@ -216,6 +240,7 @@ class Worker:
             self.password = None
             return self.editor.cancel(discard=payload["discard"])
         if kind in ("vault.create", "vault.unlock"):
+            self.restore.cancel()
             self.close_sources()
             self.close_selection()
             self.password = None
@@ -228,6 +253,7 @@ class Worker:
             self.password = password
             return {"state": "unlocked"}
         if kind == "vault.lock":
+            self.restore.cancel()
             self.close_sources()
             self.close_selection()
             self.password = None
@@ -235,6 +261,20 @@ class Worker:
             return {"state": "locked"}
         if self.password is None:
             raise VaultStoreError("vault_locked")
+        if kind == "backup.export":
+            if set(payload) != {"path"} or not isinstance(payload["path"], str) or not Path(payload["path"]).is_absolute():
+                raise ProtocolError
+            self.store.backup()
+            with self.store._writer_lock():
+                data = self.store._read_live()
+                db = self.store._connect()
+                try:
+                    self.store._verify_current(db, data)
+                    self.store._check_editor(db, None)
+                    durable_copy(Path(payload["path"]), data)
+                finally:
+                    db.close()
+            return {"state": "exported"}
         if kind == "credential.resolve":
             if set(payload) != {"entry_id", "expected_revision", "origin", "include_totp"}:
                 raise VaultStoreError("invalid_request")
