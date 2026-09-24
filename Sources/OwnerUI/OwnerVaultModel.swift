@@ -295,7 +295,7 @@ public final class OwnerVaultModel {
         catch { message = "The editing lease could not be reserved. Keep the checkout; vault access remains closed." }
     }
 
-    private func editingOperation(_ operation: (PrivateVaultWorker) async throws -> (() -> Void)) async {
+    private func editingOperation(_ operation: @MainActor (PrivateVaultWorker) async throws -> (@MainActor () -> Void)) async {
         guard editor != nil, !busy, !unlocked else { return }
         guard !QualifiedEditor.isRunning else { message = "Close KeePassXC before reviewing, applying or cancelling this checkout."; return }
         busy = true
@@ -612,7 +612,7 @@ public final class OwnerVaultModel {
         } catch { diagnosticsAvailable = false }
     }
 
-    private func perform(_ operation: (PrivateVaultWorker) async throws -> (() -> Void)) async {
+    private func perform(_ operation: @MainActor (PrivateVaultWorker) async throws -> (@MainActor () -> Void)) async {
         guard unlocked, !busy, let client = worker else { return }
         busy = true
         message = nil
