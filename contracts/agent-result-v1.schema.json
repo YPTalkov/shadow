@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YPTalkov/shadow/contracts/agent-result/v1",
+  "title": "Shadow agent response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_major"
+  ],
+  "properties": {
+    "protocol_major": {
+      "type": "integer",
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "capabilities"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "locked",
+                "catalog_consent_required",
+                "ready"
+              ]
+            },
+            "capabilities": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "account_ref",
+                  "title",
+                  "username",
+                  "origins",
+                  "group",
+                  "source_kind",
+                  "presence",
+                  "observed_at",
+                  "authorization",
+                  "supported_adapters"
+                ],
+                "properties": {
+                  "account_ref": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "username": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "origins": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 512
+                    }
+                  },
+                  "group": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "source_kind": {
+                    "enum": [
+                      "local",
+                      "mirrored"
+                    ]
+                  },
+                  "presence": {
+                    "enum": [
+                      "present",
+                      "deleted_at_source",
+                      "access_lost",
+                      "unknown"
+                    ]
+                  },
+                  "observed_at": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      {
+                        "const": null
+                      }
+                    ]
+                  },
+                  "authorization": {
+                    "enum": [
+                      "unapproved",
+                      "approved",
+                      "blocked"
+                    ]
+                  },
+                  "supported_adapters": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 128
+                    }
+                  }
+                }
+              }
+            },
+            "next_cursor": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "minLength": 64,
+                  "maxLength": 64
+                },
+                {
+                  "const": null
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation_ref",
+            "state",
+            "grant_ref"
+          ],
+          "properties": {
+            "operation_ref": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "state": {
+              "enum": [
+                "pending_owner",
+                "granted",
+                "denied",
+                "expired",
+                "revoked"
+              ]
+            },
+            "grant_ref": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "minLength": 64,
+                  "maxLength": 64
+                },
+                {
+                  "const": null
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation_ref",
+            "state",
+            "session_ref",
+            "checkpoint_ref",
+            "code"
+          ],
+          "properties": {
+            "operation_ref": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "state": {
+              "enum": [
+                "pending_owner",
+                "running",
+                "needs_owner_action",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "outcome_unknown"
+              ]
+            },
+            "session_ref": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "minLength": 64,
+                  "maxLength": 64
+                },
+                {
+                  "const": null
+                }
+              ]
+            },
+            "checkpoint_ref": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "minLength": 64,
+                  "maxLength": 64
+                },
+                {
+                  "const": null
+                }
+              ]
+            },
+            "code": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "invalid_request",
+                    "unsupported_version",
+                    "rate_limited",
+                    "invalid_cursor",
+                    "invalid_reference",
+                    "capability_unavailable",
+                    "response_limit",
+                    "unavailable",
+                    "account_consent_required",
+                    "vault_locked",
+                    "caller_unavailable",
+                    "catalog_consent_required",
+                    "unsupported_adapter",
+                    "stale_request",
+                    "invalid_scope",
+                    "request_conflict",
+                    "transport_unavailable"
+                  ]
+                },
+                {
+                  "const": null
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "closed",
+                "succeeded"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_request",
+            "unsupported_version",
+            "rate_limited",
+            "invalid_cursor",
+            "invalid_reference",
+            "capability_unavailable",
+            "response_limit",
+            "unavailable",
+            "account_consent_required",
+            "vault_locked",
+            "caller_unavailable",
+            "catalog_consent_required",
+            "unsupported_adapter",
+            "stale_request",
+            "invalid_scope",
+            "request_conflict",
+            "transport_unavailable"
+          ]
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "request_id",
+        "result"
+      ],
+      "properties": {
+        "error": {
+          "enum": []
+        }
+      }
+    },
+    {
+      "required": [
+        "error"
+      ],
+      "properties": {
+        "result": {
+          "enum": []
+        }
+      }
+    }
+  ]
+}

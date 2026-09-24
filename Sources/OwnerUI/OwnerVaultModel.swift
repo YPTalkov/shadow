@@ -7,6 +7,7 @@ import PolicyCore
 public final class OwnerVaultModel {
     public let configuration: OwnerConfiguration
     public let access = AccessCoordinator()
+    public let agentAPI: AgentAPI
     public private(set) var unlocked = false
     public private(set) var busy = false
     public private(set) var status = "Locked"
@@ -34,6 +35,7 @@ public final class OwnerVaultModel {
 
     public init(configuration: OwnerConfiguration) {
         self.configuration = configuration
+        agentAPI = AgentAPI(access: access)
         do {
             let store = try SourceEnrollmentStore(root: configuration.root, vaultID: configuration.vaultID)
             sourceStore = store

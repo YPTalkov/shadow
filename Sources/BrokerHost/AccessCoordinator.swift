@@ -250,6 +250,29 @@ public enum ConsentError: String, Error, Sendable {
         return try references.mint(account: id, revision: account.policy.revision, agent: caller.id, boot: caller.boot, grant: grant.catalogIdentity, expiresAt: min(grant.expiresAt, date().addingTimeInterval(300)))
     }
 
+    public func accountForReference(_ reference: String, caller: EnrolledAgent) throws -> ConsentAccount {
+        try check(caller)
+        guard let binding = references.lookup(reference, agent: caller.id, boot: caller.boot, now: date()),
+              let grant = catalogGrant(caller), binding.grant == grant.catalogIdentity,
+              grant.accountIDs.contains(binding.account),
+              let account = accounts.first(where: { $0.id == binding.account && $0.policy.revision == binding.revision }) else { throw ConsentError.invalidReference }
+        return account
+    }
+
+    public func disclosureIdentity(caller: EnrolledAgent) -> UUID? { expire(); return catalogGrant(caller)?.catalogIdentity }
+
+    public func adapter(_ id: String) -> QualifiedAdapterPolicy? { adapters[id] }
+
+    public func supportedAdapters(for account: ConsentAccount) -> [String] {
+        adapters.values.filter { !Set(account.metadata.origins).isDisjoint(with: $0.credentialOrigins) }.map(\.id).sorted()
+    }
+
+    public func cancelRequest(_ reference: String, caller: EnrolledAgent) throws -> ConsentReply {
+        _ = try status(reference, caller: caller)
+        if let request = pending.first(where: { $0.id == reference && $0.caller == caller }) { finish(request, state: .denied) }
+        return try status(reference, caller: caller)
+    }
+
     public func authorize(grantRef: String, caller: EnrolledAgent, account: UUID, adapterID: String, origin: String, action: ProtectedAction, session: UUID? = nil) -> Bool {
         expire()
         guard unlocked, agents.contains(caller), let grant = grants.first(where: { $0.id == grantRef }), grant.caller == caller,

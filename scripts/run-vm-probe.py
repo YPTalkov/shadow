@@ -1,6 +1,7 @@
 """Run both synthetic VM profiles and fail unless root's boundary checks pass."""
 
 import json
+import argparse
 import hashlib
 import os
 import subprocess
@@ -23,9 +24,12 @@ EXPECTED = {
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--role", action="append", choices=("agent", "browser"))
+    roles = parser.parse_args().role or ["agent", "browser"]
     manifest = json.loads((IMAGE / "manifest.json").read_text())
     results = {}
-    for role in ("agent", "browser"):
+    for role in roles:
         command = [str(EXECUTABLE), role]
         command += [str(IMAGE / name) for name in ("kernel", "initrd", "disk")]
         command += [manifest["files"][name] for name in ("kernel", "initrd", "disk")]
@@ -37,17 +41,18 @@ def main() -> None:
         passed = run.returncode == 0 and all(lines.get(k) == v for k, v in EXPECTED.items())
         passed = passed and hashlib.sha256((IMAGE / "disk").read_bytes()).hexdigest() == manifest["files"]["disk"]
         if role == "agent":
-            passed = passed and lines.get("LINUX_CODEX_RELAY") == "pass" and lines.get("CODEX_TOOL_RESULT") == "pass"
+            passed = passed and all(lines.get(key) == "pass" for key in ("LINUX_CODEX_RELAY", "CODEX_TOOL_RESULT", "CODEX_MCP_RESULT", "GUEST_AGENT_API"))
         # Only this synthetic probe's output is recorded; production guests have no console log.
         checks = {key: lines.get(key) for key in EXPECTED}
         if role == "agent":
-            checks.update({key: lines.get(key) for key in ("LINUX_CODEX_RELAY", "CODEX_TOOL_RESULT")})
+            checks.update({key: lines.get(key) for key in ("LINUX_CODEX_RELAY", "CODEX_TOOL_RESULT", "CODEX_MCP_RESULT", "GUEST_AGENT_API")})
         if role == "browser" and os.environ.get("SHADOW_LIVE_EGRESS") == "1":
             checks.update({key: lines.get(key) for key in ("HTTPS_EGRESS", "EGRESS_DESTINATIONS")})
             passed = passed and checks["HTTPS_EGRESS"] == "pass" and checks["EGRESS_DESTINATIONS"] == "denied"
         results[role] = {"passed": passed, "checks": checks}
     report = {"manifest": manifest, "profiles": results}
-    (IMAGE / "results.json").write_text(json.dumps(report, indent=2) + "\n")
+    name = "results.json" if set(roles) == {"agent", "browser"} else "results-" + "-".join(roles) + ".json"
+    (IMAGE / name).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(results, indent=2))
     if not all(result["passed"] for result in results.values()):
         raise SystemExit(1)

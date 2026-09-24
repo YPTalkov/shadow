@@ -4,11 +4,14 @@ import Virtualization
 import ModelRelay
 import EgressGateway
 import PolicyCore
+import BrokerHost
 
 @MainActor
 final class Probe: NSObject, VZVirtualMachineDelegate {
     private var vm: VZVirtualMachine?
     private var channels: InstanceChannels?
+    private let authority = AccessCoordinator()
+    private lazy var agentAPI = AgentAPI(access: authority)
 
     func start() throws {
         guard CommandLine.arguments.count == 8,
@@ -31,11 +34,23 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
         machine.delegate = self
         channels = try InstanceChannels(machine: machine, role: args[1] == "browser" ? .browser : .agent) { [weak self] connection, identity, channel in
             do {
-                let transport = try FramedChannel(descriptor: connection.fileDescriptor, maximumBytes: 4 * 1024 * 1024)
+                let transport = try FramedChannel(descriptor: connection.fileDescriptor, maximumBytes: channel == .agentBroker ? 65_536 : 4 * 1024 * 1024)
                 let data = try transport.read(timeout: 3)
                 guard let message = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw FrameError.invalidFrame }
                 if message.count == 1, message["probe"] as? String == "role" {
                     try transport.write(JSONSerialization.data(withJSONObject: ["kind": "probe", "channel": channel.rawValue]))
+                } else if channel == .agentBroker, let self {
+                    // Probe-only empty synthetic vault. Production enrollment
+                    // and unlocking come exclusively from native owner controls.
+                    let caller = EnrolledAgent(id: identity.instance, boot: identity.boot, displayName: "Codex CLI synthetic VM")
+                    self.authority.enroll(caller)
+                    if !self.authority.unlocked { self.authority.openVault(accounts: []) }
+                    Task { @MainActor in
+                        let reply = await self.agentAPI.handle(data, caller: caller)
+                        try? transport.write(reply)
+                        self.channels?.close(connection)
+                    }
+                    return
                 } else if channel == .agentModel {
                     try Self.syntheticModel(message, transport: transport)
                 } else if channel == .browserEgress {
@@ -78,17 +93,30 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
         let hasResult = input.contains { item in
             item["type"] as? String == "function_call_output" && (item["output"] as? String)?.contains("shadow-tool-ok") == true
         }
+        let hasMCP = input.contains { item in
+            guard item["type"] as? String == "function_call_output", let output = item["output"],
+                  JSONSerialization.isValidJSONObject([output]), let encoded = try? JSONSerialization.data(withJSONObject: [output]) else { return false }
+            return String(decoding: encoded, as: UTF8.self).contains("catalog_consent_required")
+        }
         let item: [String: Any]
-        if hasResult {
+        if hasResult && hasMCP {
             item = ["type": "message", "id": "msg_synthetic", "role": "assistant", "status": "completed", "content": [["type": "output_text", "text": "shadow-client-ok", "annotations": []]]]
             print("CODEX_TOOL_RESULT=pass")
+            print("CODEX_MCP_RESULT=pass")
         } else {
             let names = (body["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
-            let name = names.contains("exec_command") ? "exec_command" : "shell_command"
-            guard names.contains(name) else { throw FrameError.invalidFrame }
-            let arguments = name == "exec_command" ? ["cmd": "printf shadow-tool-ok"] : ["command": "printf shadow-tool-ok"]
+            let name = hasResult ? "shadow_vault_status" : names.contains("exec_command") ? "exec_command" : "shell_command"
+            if hasResult {
+                let namespace = (body["tools"] as? [[String: Any]] ?? []).first { $0["type"] as? String == "namespace" && $0["name"] as? String == "mcp__shadow" }
+                guard (namespace?["tools"] as? [[String: Any]] ?? []).contains(where: { $0["name"] as? String == name }) else { throw FrameError.invalidFrame }
+            } else { guard names.contains(name) else { throw FrameError.invalidFrame } }
+            let arguments: [String: Any] = hasResult
+                ? ["request_id": UUID().uuidString.lowercased(), "arguments": [String: String]()]
+                : name == "exec_command" ? ["cmd": "printf shadow-tool-ok"] : ["command": "printf shadow-tool-ok"]
             let encoded = try JSONSerialization.data(withJSONObject: arguments)
-            item = ["type": "function_call", "id": "fc_synthetic", "call_id": "call_synthetic", "name": name, "arguments": String(decoding: encoded, as: UTF8.self), "status": "completed"]
+            var call: [String: Any] = ["type": "function_call", "id": hasResult ? "fc_mcp" : "fc_synthetic", "call_id": hasResult ? "call_mcp" : "call_synthetic", "name": name, "arguments": String(decoding: encoded, as: UTF8.self), "status": "completed"]
+            if hasResult { call["namespace"] = "mcp__shadow" }
+            item = call
         }
         let response: [String: Any] = ["id": hasResult ? "resp_second" : "resp_first", "object": "response", "status": "completed", "output": [item], "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2]]
         let events: [[String: Any]] = [

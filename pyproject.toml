@@ -9,6 +9,10 @@ description = "Local credential vault and protected agent tools"
 requires-python = "==3.12.*"
 dependencies = ["pykeepass==4.2.0"]
 
+[project.scripts]
+shadow = "agent_tools.cli:main"
+shadow-mcp = "agent_tools.mcp_server:main"
+
 [dependency-groups]
 dev = ["pytest==8.4.2"]
 

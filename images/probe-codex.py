@@ -18,6 +18,11 @@ config = {
     "model_providers.shadow.supports_websockets": "false",
     "cli_auth_credentials_store": '"ephemeral"',
     "features.shell_snapshot": "false",
+    "mcp_servers.shadow.command": '"/usr/bin/python3"',
+    "mcp_servers.shadow.args": '["-m", "agent_tools.mcp_server"]',
+    "mcp_servers.shadow.env.PYTHONPATH": '"/"',
+    "mcp_servers.shadow.required": "true",
+    "mcp_servers.shadow.startup_timeout_sec": "10",
 }
 command = [
     "/usr/bin/codex", "exec", "--ignore-user-config", "--ignore-rules",
@@ -26,7 +31,7 @@ command = [
 ]
 for key, value in config.items():
     command.extend(["-c", f"{key}={value}"])
-command.append("Run printf shadow-tool-ok once, then say shadow-client-ok.")
+command.append("Run printf shadow-tool-ok once, call shadow vault status through MCP, then say shadow-client-ok.")
 try:
     result = subprocess.run(
         command, capture_output=True, timeout=30,
@@ -38,6 +43,12 @@ try:
     if not passed:
         print("CODEX_EXIT=" + str(result.returncode))
         print(result.stderr.decode(errors="replace")[-3000:])
+        print(result.stdout.decode(errors="replace")[-6000:])
+except subprocess.TimeoutExpired as error:
+    print("LINUX_CODEX_RELAY=fail")
+    print("CODEX_EXIT=timeout")
+    print((error.stderr or b"").decode(errors="replace")[-3000:])
+    print((error.stdout or b"").decode(errors="replace")[-6000:])
 finally:
     server.shutdown()
     server.server_close()

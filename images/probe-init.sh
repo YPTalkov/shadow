@@ -28,7 +28,7 @@ echo SHARED_MOUNTS=$(awk '$3 == "virtiofs" || $3 == "9p" {n++} END {print n+0}' 
 echo IP_ROUTE_COUNT=$(awk 'NR > 1 {n++} END {print n+0}' /proc/net/route)
 python3 /probe-boundary.py
 case "$(cat /proc/cmdline)" in
-  *shadow.role=agent*) python3 /probe-codex.py ;;
+  *shadow.role=agent*) python3 /probe-agent-api.py; python3 /probe-codex.py ;;
 esac
 case "$(cat /proc/cmdline)" in
   *shadow.role=browser*shadow.egress=1*) python3 /probe-egress.py ;;
