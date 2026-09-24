@@ -12,6 +12,7 @@ public final class OwnerVaultModel {
     public let modelSignIn: ModelSignInModel
     public private(set) var agentRuntime: AgentRuntime?
     public private(set) var protectedSessions: ProtectedSessionService?
+    public private(set) var connectorJobs: ConnectorRefreshService?
     private var operationJournal: OperationJournal?
     public private(set) var diagnostics: DiagnosticReport?
     public private(set) var diagnosticsAvailable = false
@@ -116,6 +117,16 @@ public final class OwnerVaultModel {
                     agentAPI.protectedService = service
                 }
             }
+            if let journal = operationJournal {
+                let service = ConnectorRefreshService(access: access, journal: journal, isConfigured: { [weak self] id in
+                    self?.sources.contains(where: { $0.id == id && $0.enabled }) == true
+                }, refresh: { [weak self] id, beforeCommit in
+                    guard let self else { throw SourceHostError.cancelled }
+                    return try await self.refreshConnectorJob(id, beforeCommit: beforeCommit)
+                }, cancel: { [weak self] in self?.sourceRuntime.stop() })
+                connectorJobs = service
+                agentAPI.connectorService = service
+            }
             nextOffset = nil
             sourceSummaries = summaries
             backupStatus = backup
@@ -156,6 +167,9 @@ public final class OwnerVaultModel {
         isLocking = true
         epoch += 1
         sourceRuntime.stop()
+        connectorJobs?.shutdown()
+        connectorJobs = nil
+        agentAPI.connectorService = nil
         modelSignIn.cancelImmediately()
         protectedSessions?.shutdown()
         protectedSessions = nil
@@ -423,6 +437,28 @@ public final class OwnerVaultModel {
             }
         }
         if unlocked && !access.unlocked { await lock() }
+    }
+
+    private func refreshConnectorJob(_ id: UUID, beforeCommit: @escaping @MainActor () throws -> Void) async throws -> SourceRefreshResult {
+        guard unlocked, !busy, let client = worker, let store = sourceStore,
+              let source = sources.first(where: { $0.id == id && $0.enabled }) else { throw SourceHostError.notConfigured }
+        busy = true
+        let generation = epoch
+        defer { if generation == epoch { busy = false } }
+        do {
+            let result = try await sourceRuntime.refresh(source, store: store, worker: client, beforeCommit: beforeCommit)
+            let items = try await client.catalogSnapshot()
+            let summaries = try await client.sources(instances: sources.map(\.id))
+            guard generation == epoch, unlocked else { throw SourceHostError.cancelled }
+            accounts = items; nextOffset = nil; sourceSummaries = summaries
+            access.updateAccounts(Self.consentAccounts(items))
+            if result.state == "committed" { record(.sourceRefreshed) }
+            if result.state == "needs_owner_action" { message = "The connector needs your attention. Open its app to sign in or unlock it, then let the agent resume its refresh." }
+            return result
+        } catch {
+            if error is VaultWorkerError, generation == epoch { lockImmediately() }
+            throw error
+        }
     }
 
     public func resolveSourceConflict(_ item: OwnerCatalogItem, choice: String) async {

@@ -8,6 +8,7 @@ public enum AgentAPIError: String, Error, Sendable {
     case responseLimit = "response_limit", unavailable, consentRequired = "account_consent_required"
     case unsupportedView = "unsupported_view", unsupportedChallenge = "unsupported_challenge", documentChanged = "document_changed"
     case sessionClosed = "session_closed", authenticationFailed = "authentication_failed", outcomeUnknown = "outcome_unknown"
+    case notConfigured = "not_configured"
 }
 
 public struct AgentRequest: Sendable {
@@ -74,6 +75,7 @@ public enum AgentDomainResult: Sendable {
         let expires: TimeInterval
     }
     public weak var protectedService: (any AgentProtectedService)?
+    public weak var connectorService: ConnectorRefreshService?
     private let access: AccessCoordinator
     private var cursors: [String: Cursor] = [:]
     private var rates: [UUID: [TimeInterval]] = [:]
@@ -146,7 +148,7 @@ public enum AgentDomainResult: Sendable {
         let args = request.arguments
         if request.operation == "vault.status" {
             let state = !access.unlocked ? "locked" : access.disclosureIdentity(caller: caller) == nil ? "catalog_consent_required" : "ready"
-            let capabilities = ["vault.status", "catalog.search", "access.request", "operation.get", "operation.cancel"] + (protectedService?.availableOperations ?? [])
+            let capabilities = Array(Set(["vault.status", "catalog.search", "access.request", "operation.get", "operation.cancel"] + (protectedService?.availableOperations ?? []) + (connectorService?.availableOperations ?? []))).sorted()
             return .object(["state": .string(state), "capabilities": .array(capabilities.map(JSONValue.string))])
         }
         guard access.unlocked else { throw ConsentError.vaultLocked }
@@ -174,7 +176,12 @@ public enum AgentDomainResult: Sendable {
                   adapter.credentialOrigins.allSatisfy({ access.authorize(grantRef: args["grant_ref"]!.string!, caller: caller, account: account.id, adapterID: adapterID, origin: $0, action: .login) }) else { throw AgentAPIError.consentRequired }
         default: break
         }
-        guard let service = protectedService, service.availableOperations.contains(request.operation) else { throw AgentAPIError.capabilityUnavailable }
+        let service: any AgentProtectedService
+        if let connector = connectorService, request.operation == "connector.request_refresh" || connector.owns(args["operation_ref"]?.string ?? "", caller: caller) {
+            service = connector
+        } else if let protectedService, protectedService.availableOperations.contains(request.operation) {
+            service = protectedService
+        } else { throw AgentAPIError.capabilityUnavailable }
         let result = try await service.handle(request, caller: caller)
         guard access.unlocked, access.agents.contains(caller) else { throw ConsentError.vaultLocked }
         if case .operation(let status) = result {
@@ -206,8 +213,10 @@ public enum AgentDomainResult: Sendable {
         var selected: [JSONValue] = []
         for account in matches.dropFirst(offset).prefix(limit) {
             let item = account.metadata
+            let accountRef = try access.accountReference(account.id, caller: caller)
             let projection: JSONValue = .object([
-                "account_ref": .string(try access.accountReference(account.id, caller: caller)),
+                "account_ref": .string(accountRef),
+                "source_ref": connectorService?.sourceReference(account, accountRef: accountRef).map(JSONValue.string) ?? .null,
                 "title": .string(item.title), "username": .string(item.username), "origins": .array(item.origins.map(JSONValue.string)),
                 "group": .string(item.group), "source_kind": .string(item.sourceKind), "presence": .string(item.presence),
                 "observed_at": item.observationDate.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null,

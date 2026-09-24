@@ -24,7 +24,7 @@ public final class OperationJournal {
     private var lockDescriptor: Int32 = -1
     private var identity = stat()
     private static let active = "('pending_owner','running','needs_owner_action')"
-    private static let operations: Set<String> = ["auth.login", "browser.navigate", "browser.click", "browser.scroll", "browser.fill_nonsecret", "source.request_refresh"]
+    private static let operations: Set<String> = ["auth.login", "browser.navigate", "browser.click", "browser.scroll", "browser.fill_nonsecret", "connector.request_refresh"]
 
     public init(path: URL, capacity: Int = 4096, date: @escaping () -> Date = { Date() }) throws {
         self.path = path; self.capacity = capacity; self.date = date

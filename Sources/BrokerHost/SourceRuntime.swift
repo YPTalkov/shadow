@@ -26,7 +26,7 @@ public struct SourceRefreshResult: Sendable {
         if running.process.isRunning { kill(running.process.processIdentifier, SIGKILL) }
     }
 
-    public func refresh(_ source: EnrolledSource, store: SourceEnrollmentStore, worker: PrivateVaultWorker) async throws -> SourceRefreshResult {
+    public func refresh(_ source: EnrolledSource, store: SourceEnrollmentStore, worker: PrivateVaultWorker, beforeCommit: @MainActor () throws -> Void = {}) async throws -> SourceRefreshResult {
         guard source.enabled else { throw SourceHostError.notConfigured }
         guard pendingRequest == nil else { throw VaultWorkerError.busy }
         let epoch = UUID(), request = UUID()
@@ -55,10 +55,14 @@ public struct SourceRefreshResult: Sendable {
                 let remaining = min(60, deadline - DeadlineClock.now)
                 let data = try await Task.detached { try channel.read(timeout: remaining) }.value
                 guard active?.id == request, DeadlineClock.now < deadline else { throw SourceHostError.cancelled }
-                if let status = try terminalStatus(data, source: source.id, epoch: epoch, request: request) {
+                let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                if let status = try terminalStatus(object, byteCount: data.count, source: source.id, epoch: epoch, request: request) {
                     stop()
                     try await worker.closeSource(instance: source.id)
                     return SourceRefreshResult(state: status, receipt: nil)
+                }
+                if object?["kind"] as? String == "commit" {
+                    try beforeCommit()
                 }
                 let result = try await worker.sourceFrame(instance: source.id, frame: data)
                 guard active?.id == request else { throw SourceHostError.cancelled }
@@ -106,9 +110,9 @@ public struct SourceRefreshResult: Sendable {
         }
     }
 
-    private func terminalStatus(_ data: Data, source: UUID, epoch: UUID, request: UUID) throws -> String? {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], object["kind"] as? String == "status" else { return nil }
-        guard data.count <= 1024,
+    private func terminalStatus(_ object: [String: Any]?, byteCount: Int, source: UUID, epoch: UUID, request: UUID) throws -> String? {
+        guard let object, object["kind"] as? String == "status" else { return nil }
+        guard byteCount <= 1024,
               Set(object.keys) == ["contract_major", "kind", "source_instance_id", "channel_epoch", "request_id", "state"],
               object["contract_major"] as? Int == 1,
               object["source_instance_id"] as? String == source.uuidString.lowercased(),

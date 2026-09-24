@@ -16,6 +16,14 @@ Catalog grants cannot authorize login. References are scoped to a VM boot, grant
 
 Use a stable UUID `request_id` when explicitly retrying a mutation. Do not automatically retry an uncertain website action. `operation.cancel` cancels pending work; it cannot undo an action already delivered to a website. A completed consent request remains completed; the owner can revoke its grant separately.
 
+## Connector refresh
+
+Approved catalog entries from an enabled, enrolled connector include an opaque `source_ref`. Local entries and unavailable connectors return `null`. The reference is backed by that catalog entry and expires with its account reference, disclosure grant, revision or VM boot; it never exposes the source's UUID, executable path or enrollment key. It only permits requesting the configured native import.
+
+Call `connector.request_refresh` with `source_ref` and a stable request UUID. Poll the returned operation. Results contain a fixed state/code and references; connector receipts, counts, credentials and payloads stay native. Once accepted, the import can finish even when its own entry updates invalidate the old catalog grant. Native lock, task termination or explicit operation cancellation ends the job. Future discovery and new refresh requests require valid disclosure again.
+
+If polling returns `needs_owner_action`, the owner signs in or unlocks the connector in its own application. Then call `operation.resume` with both returned operation and checkpoint references. An exact retry does not repeat the refresh. Only a job that has not reached commit can resume; after an uncertain commit, use the native source screen to inspect the result. Jobs expire after five minutes, run one at a time, allow at most three resumes, and limit new refreshes of a source to one per minute.
+
 ## CLI
 
 Inside the guest:

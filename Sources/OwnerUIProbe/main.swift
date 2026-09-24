@@ -4,6 +4,7 @@ import Security
 import QuartzCore
 import OwnerUI
 import BrokerHost
+import PolicyCore
 
 @MainActor
 func snapshot(_ window: NSWindow, to url: URL) throws {
@@ -83,6 +84,32 @@ Task { @MainActor in
         guard let enrolled = owner.sources.first else { throw OwnerConfigurationError.unavailable }
         await owner.refreshSource(enrolled.id)
         guard owner.unlocked, owner.accounts.count == 4 else { throw OwnerConfigurationError.unavailable }
+        stage = "agent_connector_refresh"
+        let sourceCaller = EnrolledAgent(id: UUID(), boot: UUID(), displayName: "Synthetic source job")
+        owner.access.enroll(sourceCaller)
+        guard let mirror = owner.access.accounts.first(where: { $0.metadata.sourceInstance == enrolled.id.uuidString.lowercased() }) else { throw OwnerConfigurationError.unavailable }
+        let sourceConsent = try owner.access.requestCatalog(caller: sourceCaller, requestID: UUID())
+        try owner.access.approveCatalog(sourceConsent.requestRef, selected: [mirror.id], duration: 300)
+        func sourceCall(_ operation: String, _ arguments: [String: JSONValue] = [:], id: UUID = UUID()) async throws -> JSONValue {
+            let request = try JSONValue.object(["protocol_major": .integer(1), "request_id": .string(id.uuidString.lowercased()), "operation": .string(operation), "arguments": .object(arguments)]).encoded()
+            return try BoundedJSON.parse(await owner.agentAPI.handle(request, caller: sourceCaller))
+        }
+        let catalog = try await sourceCall("catalog.search")
+        guard let sourceReference = catalog["result"]?["items"]?.array?.first?["source_ref"]?.string else { throw OwnerConfigurationError.unavailable }
+        let sourceRequest = UUID()
+        let job = try await sourceCall("connector.request_refresh", ["source_ref": .string(sourceReference)], id: sourceRequest)
+        guard let operation = job["result"]?["operation_ref"]?.string else { throw OwnerConfigurationError.unavailable }
+        var sourceJob = try await sourceCall("operation.get", ["operation_ref": .string(operation)])
+        let sourceDeadline = DeadlineClock.now + 15
+        while sourceJob["result"]?["state"] == .string("running"), DeadlineClock.now < sourceDeadline {
+            try await Task.sleep(for: .milliseconds(100))
+            sourceJob = try await sourceCall("operation.get", ["operation_ref": .string(operation)])
+        }
+        guard sourceJob["result"]?["state"] == .string("succeeded"), owner.accounts.count == 4, owner.unlocked,
+              owner.sourceSummaries.first(where: { $0.id == enrolled.id.uuidString.lowercased() })?.generation == 2 else { throw OwnerConfigurationError.unavailable }
+        let repeated = try await sourceCall("connector.request_refresh", ["source_ref": .string(sourceReference)], id: sourceRequest)
+        guard repeated["result"]?["operation_ref"] == .string(operation) else { throw OwnerConfigurationError.unavailable }
+        owner.access.removeAgent(sourceCaller)
         show(OwnerPanel(model: owner, initialDestination: .sources), in: window)
         try await Task.sleep(for: .milliseconds(500))
         try snapshot(window, to: evidence.appendingPathComponent("owner-sources.jpg"))

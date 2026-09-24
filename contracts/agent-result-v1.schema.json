@@ -135,6 +135,19 @@
                       "type": "string",
                       "maxLength": 128
                     }
+                  },
+                  "source_ref": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "minLength": 64,
+                        "maxLength": 64
+                      },
+                      {
+                        "const": null
+                      }
+                    ]
                   }
                 }
               }
@@ -273,7 +286,8 @@
                     "document_changed",
                     "session_closed",
                     "authentication_failed",
-                    "outcome_unknown"
+                    "outcome_unknown",
+                    "not_configured"
                   ]
                 },
                 {
@@ -418,7 +432,8 @@
             "document_changed",
             "session_closed",
             "authentication_failed",
-            "outcome_unknown"
+            "outcome_unknown",
+            "not_configured"
           ]
         }
       }
