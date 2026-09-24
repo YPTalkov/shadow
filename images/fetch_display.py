@@ -115,9 +115,10 @@ def main():
     parser.add_argument("--refresh-lock", action="store_true")
     if parser.parse_args().refresh_lock:
         refresh()
-    for artifact in json.loads(LOCK.read_text())["artifacts"]:
-        fetch(artifact["url"], artifact["sha256"], artifact["filename"])
-        print("verified " + artifact["name"], flush=True)
+    for lock in (LOCK, ROOT / "images/security-packages.lock.json"):
+        for artifact in json.loads(lock.read_text())["artifacts"]:
+            fetch(artifact["url"], artifact["sha256"], artifact["filename"])
+            print("verified " + artifact["name"], flush=True)
 
 
 if __name__ == "__main__":

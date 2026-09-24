@@ -20,6 +20,16 @@ The Codex fixture routes guest loopback HTTP through the guest's model-only vsoc
 
 The headed Chromium runtime uses a separate pinned Ubuntu image because Playwright does not support musl. Its image builder, real VM authentication checks and current limitations are documented in [browser runtime qualification](../docs/release/browser-runtime-status.md). Image qualification does not establish that the finished application package is ready.
 
+## Browser package maintenance
+
+`images.fetch_display` downloads both the display and security package locks. `--refresh-lock` refreshes only the display dependency selection; security updates require explicit review against the pinned Ubuntu indexes. Run `images.build_browser --profile probe` to rebuild the full filesystem after either lock changes, then rebuild the qualification and runtime profiles with `--runtime-only`.
+
+The builder checks package identities, replaces dpkg inventory records, removes retired payloads, and refuses removal of a declared dependency or a shared file. It assembles a read-only filesystem without running Debian maintainer scripts. The resulting inventory marks these records `X-Shadow-Assembled`; it is not a general-purpose mutable dpkg installation.
+
+Kernel module bytes are read directly from the verified SquashFS archive into CPIO. Linux names such as `xt_DSCP.ko` and `xt_dscp.ko` must remain distinct even when the build host uses a case-insensitive filesystem. Do not extract that archive to a normal macOS directory.
+
+See the [dependency assessment](../docs/release/dependency-assessment.md) for scan coverage, remaining advisories and the release gate.
+
 ## Production Codex task image
 
 After fetching the inputs, run `uv run --frozen python -m images.build_probe --profile agent`. This writes `.build/guest-cache/agent/manifest.json` and hash-pinned boot files. The agent profile contains the task runner rather than the synthetic boot scripts. Codex's matching `codex-code-mode-host` executable is included for GPT-6 code tools. Guest home and task files remain in memory; the native supervisor discards console output.

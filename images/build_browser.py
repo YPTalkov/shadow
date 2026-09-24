@@ -15,6 +15,7 @@ import zipfile
 
 from images.build_probe import cpio_file, RELEASE, SHA256
 from images.fetch_browser import CACHE, ROOT
+from images.debian_packages import DebianOverlay, reconcile_packages
 
 
 def safe_name(name: str) -> str:
@@ -41,6 +42,26 @@ def canonical_debian_layer(source: Path, target: Path) -> None:
             normalized.addfile(member, data)
             if data is not None:
                 data.close()
+
+
+def squashfs_modules(image: Path):
+    """Read kernel modules without materializing case-sensitive guest names."""
+    listing = subprocess.check_output(["unsquashfs", "-lln", str(image)], text=True)
+    for line in listing.splitlines():
+        fields = line.split(maxsplit=5)
+        if len(fields) != 6 or not fields[5].startswith("squashfs-root/modules/"):
+            continue
+        attributes, _, size, _, _, path = fields
+        name = safe_name(path.removeprefix("squashfs-root/"))
+        if attributes.startswith("d"):
+            yield "lib/" + name, b"", stat.S_IFDIR | 0o755
+        elif attributes.startswith("-"):
+            data = subprocess.check_output(["unsquashfs", "-cat", str(image), name])
+            if len(data) != int(size):
+                raise ValueError("module_size_mismatch")
+            yield "lib/" + name, data, stat.S_IFREG | 0o644
+        else:
+            raise ValueError("unsupported_module_member")
 
 
 class LayerSet(AbstractContextManager):
@@ -148,14 +169,16 @@ def main() -> None:
             shutil.copyfileobj(source, target, 1024 * 1024)
         paths.append(unpacked)
     display = json.loads((ROOT / "images/display-packages.lock.json").read_text())
-    if display["image_manifest_sha256"] != lock["manifest_sha256"]:
-        raise ValueError("display_base_mismatch")
-    for artifact in ([] if runtime_only else display["artifacts"]):
+    security = json.loads((ROOT / "images/security-packages.lock.json").read_text())
+    if any(pins["image_manifest_sha256"] != lock["manifest_sha256"] for pins in (display, security)):
+        raise ValueError("package_base_mismatch")
+    overlays = []
+    for artifact in ([] if runtime_only else display["artifacts"] + security["artifacts"]):
         package = CACHE / artifact["filename"]
         with package.open("rb") as source:
             if hashlib.file_digest(source, "sha256").hexdigest() != artifact["sha256"]:
                 raise ValueError("display_artifact_hash_mismatch")
-        # Read only the Debian data archive; maintainer scripts are never run.
+        # Read package payload and control metadata; never run maintainer scripts.
         unpacked = CACHE / (artifact["name"] + "-data.tar")
         compressed = subprocess.check_output(["ar", "-p", str(package), "data.tar.zst"])
         with unpacked.open("wb") as output:
@@ -163,6 +186,13 @@ def main() -> None:
         normalized = CACHE / (artifact["name"] + "-normalized.tar")
         canonical_debian_layer(unpacked, normalized)
         paths.append(normalized)
+        compressed_control = subprocess.check_output(["ar", "-p", str(package), "control.tar.zst"])
+        control_tar = subprocess.check_output(["zstd", "-d", "-c"], input=compressed_control)
+        with tarfile.open(fileobj=io.BytesIO(control_tar)) as archive:
+            control = archive.extractfile("./control").read()
+        with tarfile.open(normalized) as archive:
+            files = frozenset(safe_name(member.name) for member in archive)
+        overlays.append(DebianOverlay(artifact["name"], artifact["version"], control, files))
     additions = {}
     for wheel in ([] if runtime_only else lock["wheels"]):
         with zipfile.ZipFile(CACHE / wheel) as archive:
@@ -180,6 +210,7 @@ def main() -> None:
                 raise ValueError("browser_base_image_changed")
     else:
         with LayerSet(paths) as merged:
+            additions.update(reconcile_packages(merged, overlays, security["removed_packages"]))
             process = subprocess.Popen(["mksquashfs", "-", str(disk), "-tar", "-noappend", "-all-root", "-default-mode", "0755", "-default-uid", "0", "-default-gid", "0", "-comp", "gzip", "-processors", "2", "-no-progress", "-mkfs-time", "0"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
             try:
                 merged.write(process.stdin, additions)
@@ -196,8 +227,11 @@ def main() -> None:
             raise ValueError("kernel_archive_hash_mismatch")
     with tarfile.open(archive_path) as archive:
         ramdisk = archive.extractfile("boot/initramfs-virt").read()
-    modules = CACHE / "modules-root"
-    subprocess.run(["unsquashfs", "-f", "-d", str(modules), str(ROOT / ".build/guest-cache/modloop-virt")], check=True, stdout=subprocess.DEVNULL)
+        module_hash = hashlib.sha256(archive.extractfile("boot/modloop-virt").read()).hexdigest()
+    modules = ROOT / ".build/guest-cache/modloop-virt"
+    with modules.open("rb") as source:
+        if hashlib.file_digest(source, "sha256").hexdigest() != module_hash:
+            raise ValueError("module_archive_hash_mismatch")
     bootstrap = (ROOT / "images/browser-init.sh").read_bytes()
     if arguments.profile != "probe":
         entrypoint = b"-m browser_worker.supervisor" if arguments.profile == "runtime" else b"/opt/shadow/runtime_qualification.py"
@@ -225,9 +259,8 @@ def main() -> None:
         overlay += cpio_file(name, b"", stat.S_IFDIR | 0o755)
     for name, data in payload.items():
         overlay += cpio_file(name, data, stat.S_IFREG | 0o644)
-    for path in sorted((modules / "modules").rglob("*")):
-        name = "lib/" + str(path.relative_to(modules))
-        overlay += cpio_file(name, b"" if path.is_dir() else path.read_bytes(), (stat.S_IFDIR | 0o755) if path.is_dir() else (stat.S_IFREG | 0o644))
+    for name, contents, mode in squashfs_modules(modules):
+        overlay += cpio_file(name, contents, mode)
     overlay += cpio_file("TRAILER!!!", b"", 0)
     initrd_name = "initrd" if arguments.profile == "probe" else "initrd-" + arguments.profile
     (CACHE / initrd_name).write_bytes(ramdisk + gzip.compress(overlay, compresslevel=6, mtime=0))

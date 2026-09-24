@@ -15,3 +15,11 @@ The review traced native consent/revision/boot scope into protected sessions and
 Outstanding requirements remain in the [release decision](go-no-go.md) and [requirement matrix](security-evidence.md). The independent security review, live provider/site, physical OS and owner accessibility/recovery checks are open. Publishing a draft source milestone does not approve real credentials.
 
 The detailed machine-readable run is local at `/tmp/compound-engineering-501/ce-code-review/20260924-071758-a0230df5`; this durable receipt does not depend on that temporary directory surviving.
+
+## Image maintenance follow-up
+
+The subsequent dependency scan found two HIGH advisory matches in unused GStreamer components, public updates for 18 packages, and missing display-overlay inventory records. A repeat build exposed a case collision in kernel module extraction on macOS. These are separate findings discovered after the review scope above.
+
+The follow-up applies correctness, security, reliability, testing and maintainability rubrics serially to the package lock, Debian reconciliation helper, archive-based module reader and CI interpreter setup. Reconciliation checks identities before publication, checks both replacement and retained dependencies, preserves shared files/directories, removes retired payloads and updates the scanner inventory. Module bytes remain archive data and the module archive is verified against the pinned release. No package script runs on the host. The CI change repairs an observed unavailable `setup-python` version by installing the same exact runtime through uv.
+
+Twelve image tests cover archive traversal/links, usr-merge, package removal/upgrades, shared files, Pre-Depends, replacement dependencies, metadata identity and case-distinct module bytes. Actual image checks verify all 205 retired payloads absent, all 515 package dependency relations satisfied, case-distinct module hashes preserved, and all 37 Chromium scenarios passing. Advisory coverage and unresolved findings are explicit in the [dependency assessment](dependency-assessment.md). This follow-up is self-review; the independent review and full-plan verdict remain unchanged.

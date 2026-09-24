@@ -1,0 +1,186 @@
+{
+  "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+  "indexes": [
+    {
+      "suite": "noble",
+      "component": "main",
+      "sha256": "4a1901e6124fb0a111f5dffc8f5c14474f449e2ecfa71f2eaf0b29917edb53f9"
+    },
+    {
+      "suite": "noble",
+      "component": "universe",
+      "sha256": "6df230cf5cfebcbd59e4e2713b8eed07dc0aaed66fb471ebf046cb70ccb07275"
+    },
+    {
+      "suite": "noble-updates",
+      "component": "main",
+      "sha256": "4bb0118f2f3aa35c9b0c3dcf68f141ace437e11440e5ac57fd855e709421380e"
+    },
+    {
+      "suite": "noble-updates",
+      "component": "universe",
+      "sha256": "10c5a824ae3a8a81201691f9403f803881859a1a2351d1d4e475cba678e3c8db"
+    },
+    {
+      "suite": "noble-security",
+      "component": "main",
+      "sha256": "fc90bd488a4efbe309b6925077dcb87c6b1d960c1a24a7c58fa1737be611debf"
+    },
+    {
+      "suite": "noble-security",
+      "component": "universe",
+      "sha256": "e0802badde93791c10951dd7def8c29dc81527c69cee165564a93a2964419b4b"
+    }
+  ],
+  "removed_packages": [
+    "gstreamer1.0-plugins-bad",
+    "libgstreamer-plugins-bad1.0-0"
+  ],
+  "reason": "Chromium runtime does not use these GStreamer plugins; CVE-2025-3887 has only an Ubuntu Pro fix for Noble. No remaining installed package declares a dependency on them.",
+  "artifacts": [
+    {
+      "name": "gstreamer1.0-plugins-base",
+      "version": "1.24.2-1ubuntu0.5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gst-plugins-base1.0/gstreamer1.0-plugins-base_1.24.2-1ubuntu0.5_arm64.deb",
+      "sha256": "dbbe644b135e95ef2cb035c27afb6eb05ba91c72ef63ef12a15de221a264616e",
+      "filename": "gstreamer1.0-plugins-base_1.24.2-1ubuntu0.5_arm64.deb",
+      "depends": "libc6 (>= 2.33), libcdparanoia0 (>= 3.10.2+debian), libglib2.0-0t64 (>= 2.79.0), libgstreamer-plugins-base1.0-0 (>= 1.24.0), libgstreamer1.0-0 (>= 1.24.0), libogg0 (>= 1.0rc3), libopus0 (>= 1.1), liborc-0.4-0t64 (>= 1:0.4.34), libtheora0 (>= 1.1), libvisual-0.4-0 (>= 0.4.0), libvorbis0a (>= 1.3.1), libvorbisenc2 (>= 1.3.1)"
+    },
+    {
+      "name": "gstreamer1.0-plugins-good",
+      "version": "1.24.2-1ubuntu1.7",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gst-plugins-good1.0/gstreamer1.0-plugins-good_1.24.2-1ubuntu1.7_arm64.deb",
+      "sha256": "6ca6757f3d5a16b3c3e65c4ebd0a1f958d267f34c3c5232dd73350ff07198d72",
+      "filename": "gstreamer1.0-plugins-good_1.24.2-1ubuntu1.7_arm64.deb",
+      "depends": "libaa1 (>= 1.4p5), libavc1394-0 (>= 0.5.3), libbz2-1.0, libc6 (>= 2.34), libcaca0 (>= 0.99.beta20), libcairo-gobject2 (>= 1.10.0), libcairo2 (>= 1.10.0), libdv4t64 (>= 1.0.0), libflac12t64 (>= 1.3.0), libgcc-s1 (>= 3.3.1), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.79.0), libgstreamer-plugins-base1.0-0 (>= 1.24.0), libgstreamer-plugins-good1.0-0 (= 1.24.2-1ubuntu1.7), libgstreamer1.0-0 (>= 1.24.0), libgudev-1.0-0 (>= 147), libiec61883-0 (>= 1.2.0), libjpeg8 (>= 8c), libmp3lame0 (>= 3.100), libmpg123-0t64 (>= 1.28.0), liborc-0.4-0t64 (>= 1:0.4.34), libpng16-16t64 (>= 1.6.2), libpulse0 (>= 2.0), libraw1394-11 (>= 2.1.2), libshout3 (>= 2.4.6), libspeex1 (>= 1.2~), libssl3t64 (>= 3.0.0), libstdc++6 (>= 13.1), libtag1v5 (>= 1.9.1-2.2~), libtwolame0 (>= 0.3.10), libv4l-0t64 (>= 0.5.0), libvpx9 (>= 1.12.0), libwavpack1 (>= 4.60), libx11-6, libxdamage1 (>= 1:1.1), libxext6, libxfixes3, libxml2 (>= 2.9.0), libxtst6, zlib1g (>= 1:1.1.4), gstreamer1.0-plugins-base (>= 1.24.0), libsoup-3.0-0"
+    },
+    {
+      "name": "libaom3",
+      "version": "3.8.2-2ubuntu0.2",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/a/aom/libaom3_3.8.2-2ubuntu0.2_arm64.deb",
+      "sha256": "8dad77064443e0e6bae2ada0f8e616c0af48b67e26080129743fff8249d0e566",
+      "filename": "libaom3_3.8.2-2ubuntu0.2_arm64.deb",
+      "depends": "libc6 (>= 2.34)"
+    },
+    {
+      "name": "libc-bin",
+      "version": "2.39-0ubuntu8.9",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc-bin_2.39-0ubuntu8.9_arm64.deb",
+      "sha256": "5a96fe62c7803a4b886b29afbb67b5e41952de918abd217d2b8fdfbc44c3b72d",
+      "filename": "libc-bin_2.39-0ubuntu8.9_arm64.deb",
+      "depends": "libc6 (>> 2.39), libc6 (<< 2.40)"
+    },
+    {
+      "name": "libc6",
+      "version": "2.39-0ubuntu8.9",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb",
+      "sha256": "ad109797c5f78a5eeb6d4c296bfbaae68b239111a0c9ac0eb97b8d430284ac45",
+      "filename": "libc6_2.39-0ubuntu8.9_arm64.deb",
+      "depends": "libgcc-s1"
+    },
+    {
+      "name": "libexpat1",
+      "version": "2.6.1-2ubuntu0.5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/e/expat/libexpat1_2.6.1-2ubuntu0.5_arm64.deb",
+      "sha256": "c202f80537790929983f52220cbf29145652a6a2a7d9977be0c66fcc1ef72dcc",
+      "filename": "libexpat1_2.6.1-2ubuntu0.5_arm64.deb",
+      "depends": "libc6 (>= 2.38)"
+    },
+    {
+      "name": "libglib2.0-0t64",
+      "version": "2.80.0-6ubuntu3.9",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glib2.0/libglib2.0-0t64_2.80.0-6ubuntu3.9_arm64.deb",
+      "sha256": "e8ed0414ac46a406c7b8c18b28572075dcc6807b1cfc48fa88198c0db0a7dcf9",
+      "filename": "libglib2.0-0t64_2.80.0-6ubuntu3.9_arm64.deb",
+      "depends": "libc6 (>= 2.38), libffi8 (>= 3.4), libmount1 (>= 2.26.2), libpcre2-8-0 (>= 10.22), libselinux1 (>= 3.1~), zlib1g (>= 1:1.2.2)"
+    },
+    {
+      "name": "libgstreamer-gl1.0-0",
+      "version": "1.24.2-1ubuntu0.5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gst-plugins-base1.0/libgstreamer-gl1.0-0_1.24.2-1ubuntu0.5_arm64.deb",
+      "sha256": "569e78b1fbfb50fa57271157dc45cc3ebd682d3a8a940e1116cbf64c12cd043f",
+      "filename": "libgstreamer-gl1.0-0_1.24.2-1ubuntu0.5_arm64.deb",
+      "depends": "libc6 (>= 2.17), libdrm2 (>= 2.4.55), libegl1, libgbm1 (>= 8.1~0), libgl1, libglib2.0-0t64 (>= 2.79.0), libgstreamer-plugins-base1.0-0 (>= 1.23.1), libgstreamer1.0-0 (>= 1.24.0), libgudev-1.0-0 (>= 165), libwayland-client0 (>= 1.20.0), libwayland-cursor0 (>= 1.11), libwayland-egl1 (>= 1.15.0), libx11-6, libx11-xcb1 (>= 2:1.8.7), libxcb1"
+    },
+    {
+      "name": "libgstreamer-plugins-base1.0-0",
+      "version": "1.24.2-1ubuntu0.5",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gst-plugins-base1.0/libgstreamer-plugins-base1.0-0_1.24.2-1ubuntu0.5_arm64.deb",
+      "sha256": "cf52b2547943fc6444a6d674c2fe1fc2f9cc9ff1e3ff5f4a88b8f07da4a55dd4",
+      "filename": "libgstreamer-plugins-base1.0-0_1.24.2-1ubuntu0.5_arm64.deb",
+      "depends": "libc6 (>= 2.33), libdrm2 (>= 2.4.74), libglib2.0-0t64 (>= 2.79.0), libgstreamer1.0-0 (>= 1.24.0), liborc-0.4-0t64 (>= 1:0.4.34), zlib1g (>= 1:1.1.4), iso-codes"
+    },
+    {
+      "name": "libgstreamer-plugins-good1.0-0",
+      "version": "1.24.2-1ubuntu1.7",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gst-plugins-good1.0/libgstreamer-plugins-good1.0-0_1.24.2-1ubuntu1.7_arm64.deb",
+      "sha256": "25897f1432778ff6c06d32225d4ec4e59164c08f4a8849e6db9e2015d22b7b42",
+      "filename": "libgstreamer-plugins-good1.0-0_1.24.2-1ubuntu1.7_arm64.deb",
+      "depends": "libc6 (>= 2.17), libglib2.0-0t64 (>= 2.79.0), libgstreamer-plugins-base1.0-0 (>= 1.24.0), libgstreamer1.0-0 (>= 1.24.0)"
+    },
+    {
+      "name": "libperl5.38t64",
+      "version": "5.38.2-3.2ubuntu0.6",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/perl/libperl5.38t64_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "sha256": "f9ef8a6909d0048cc4e4ce89c3c3ed010ba13e7932024d5744e38294e42b0925",
+      "filename": "libperl5.38t64_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "depends": "libbz2-1.0, libc6 (>= 2.38), libcrypt1 (>= 1:4.1.0), libdb5.3t64, libgdbm-compat4t64 (>= 1.18-3), libgdbm6t64 (>= 1.21), zlib1g (>= 1:1.2.3.3), perl-modules-5.38 (>= 5.38.2-3.2ubuntu0.6)"
+    },
+    {
+      "name": "libsoup-3.0-0",
+      "version": "3.4.4-5ubuntu0.8",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libs/libsoup3/libsoup-3.0-0_3.4.4-5ubuntu0.8_arm64.deb",
+      "sha256": "c57285f19460b8294429e5e146743f50d9ab6f7f24d0e6619e1f0c7d55c9c445",
+      "filename": "libsoup-3.0-0_3.4.4-5ubuntu0.8_arm64.deb",
+      "depends": "glib-networking, libsoup-3.0-common, libbrotli1 (>= 0.6.0), libc6 (>= 2.38), libglib2.0-0t64 (>= 2.79.0), libgssapi-krb5-2 (>= 1.17), libnghttp2-14 (>= 1.50.0), libpsl5t64 (>= 0.16.0), libsqlite3-0 (>= 3.5.9), zlib1g (>= 1:1.2.0)"
+    },
+    {
+      "name": "libsoup-3.0-common",
+      "version": "3.4.4-5ubuntu0.8",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libs/libsoup3/libsoup-3.0-common_3.4.4-5ubuntu0.8_all.deb",
+      "sha256": "175a3d508eb94e2d676d4f68fb67961a4600426598ce6ee1838c8207e1d947c4",
+      "filename": "libsoup-3.0-common_3.4.4-5ubuntu0.8_all.deb",
+      "depends": ""
+    },
+    {
+      "name": "libsqlite3-0",
+      "version": "3.45.1-1ubuntu2.8",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/sqlite3/libsqlite3-0_3.45.1-1ubuntu2.8_arm64.deb",
+      "sha256": "85925089ef6820a5b6ed80bb490d187465e49687c388333895680fda54e3ee06",
+      "filename": "libsqlite3-0_3.45.1-1ubuntu2.8_arm64.deb",
+      "depends": "libc6 (>= 2.38)"
+    },
+    {
+      "name": "libxml2",
+      "version": "2.9.14+dfsg-1.3ubuntu3.9",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.9_arm64.deb",
+      "sha256": "dddfd368cf2e515d94b84a27ee3819a54ea6e208b0a34c7c2dc5948357e5cd83",
+      "filename": "libxml2_2.9.14+dfsg-1.3ubuntu3.9_arm64.deb",
+      "depends": "libc6 (>= 2.38), libicu74 (>= 74.1-1~), liblzma5 (>= 5.1.1alpha+20120614), zlib1g (>= 1:1.2.3.3)"
+    },
+    {
+      "name": "perl",
+      "version": "5.38.2-3.2ubuntu0.6",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/perl/perl_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "sha256": "c8997d0e440f8f220981e25af1f63d1ab6a86afba770218a240cd5f385585aee",
+      "filename": "perl_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "depends": "perl-base (= 5.38.2-3.2ubuntu0.6), perl-modules-5.38 (>= 5.38.2-3.2ubuntu0.6), libperl5.38t64 (= 5.38.2-3.2ubuntu0.6)"
+    },
+    {
+      "name": "perl-base",
+      "version": "5.38.2-3.2ubuntu0.6",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/perl/perl-base_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "sha256": "52ff69555911c8ef4350a80b12bbdc823b6c096cb15eb39c540cd84e6c726cc0",
+      "filename": "perl-base_5.38.2-3.2ubuntu0.6_arm64.deb",
+      "depends": ""
+    },
+    {
+      "name": "perl-modules-5.38",
+      "version": "5.38.2-3.2ubuntu0.6",
+      "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/perl/perl-modules-5.38_5.38.2-3.2ubuntu0.6_all.deb",
+      "sha256": "9c4c90145209d4f85be9255417008e8decb9cd5d189f446fd39ad096e31199cf",
+      "filename": "perl-modules-5.38_5.38.2-3.2ubuntu0.6_all.deb",
+      "depends": "perl-base (>= 5.38.2-1)"
+    }
+  ]
+}

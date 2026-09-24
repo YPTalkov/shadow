@@ -25,6 +25,6 @@ The Argon2id floor remains 128 MiB, three iterations, two lanes. The measured un
 
 ## Dependency review and limits
 
-`dependencies.json` inside the app records host Python distributions, Alpine APK declarations and browser Debian package versions; exact image/wheel/package locks and upstream notices are included. pip-audit 2.10.1 reported no known advisories for all 11 pinned host Python dependencies on 2026-09-24. This does not cover every bundled native or guest component or establish that an undisclosed vulnerability is absent.
+`dependencies.json` inside the app records host Python distributions, Alpine APK declarations and browser Debian package versions; exact image/wheel/package locks and upstream notices are included. pip-audit 2.10.1 reported no known advisories for all 11 pinned host Python dependencies on 2026-09-24. The [guest dependency assessment](dependency-assessment.md) records the subsequent browser updates/removals, 515-package inventory, 19-APK scan, remaining advisories and coverage gaps. These scans do not cover every bundled native or guest component or establish that an undisclosed vulnerability is absent.
 
 The full production gates remain open for live ChatGPT sign-in, owner-selected real-site support, physical OS-event rehearsal and independent security review. Ad-hoc integrity checks are not publisher authentication and do not defend against replacement of the entire trusted application by a compromised host administrator. Use synthetic credentials only.

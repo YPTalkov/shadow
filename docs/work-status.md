@@ -4,7 +4,7 @@ The acceptance target is the reviewed plan's G1–G6 release evidence, a package
 
 | Unit | State | Evidence or remaining work |
 |---|---|---|
-| U1 | Partial | KDBX/KeePassXC interoperability, Swift builds, locked production images and host Python dependency audit pass. Full native/guest dependency review remains. |
+| U1 | Partial | KDBX/KeePassXC interoperability, Swift builds and locked production images pass. Host Python and guest package scans are recorded; public browser fixes applied and unused vulnerable plugins removed. Residual advisories and native components still need review. |
 | U2 | Partial | Both production profiles boot; real Linux root boundary attacks, cross-role socket denial, Linux Codex relay, HTTPS gateway and watchdog tests pass. Live provider and independent isolation qualification remain. |
 | U3 | Implemented and tested | Native worker/Keychain create/import/reopen/rollback, hostile-file bounds and sealed packaged-worker qualification pass. |
 | U4 | Implemented and tested | Catalog, references, authority and restriction ledger compose with native consent and both VMs; 10,000-entry search benchmark passes. |
