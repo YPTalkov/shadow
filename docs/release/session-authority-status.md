@@ -60,5 +60,6 @@ results are the adjacent `native-session-*-results.json` files.
 
 Targeted checks after cleanup: 43 Python tests and 11 native tests passed. Python
 compilation and Swift builds passed; no Python lint/typecheck runner is configured.
-The native owner panel has not yet been connected to this runtime; packaging,
-real-site qualification and the full cross-boundary attack matrix remain open.
+Those counts describe this component checkpoint. The native owner panel and
+packaged runtime are now connected; see [package qualification](package-status.md).
+Real-site qualification and independent attack assessment remain open.

@@ -1,14 +1,14 @@
 {
-  "built_at": "2026-09-24T05:12:51.474170+00:00",
-  "source_commit": "1b50398bbe1630b624fb7691499be50420c97773",
-  "source_dirty": true,
+  "built_at": "2026-09-24T06:00:15.733380+00:00",
+  "source_commit": "42b5d5750fe51a8818af7ab7b100c7d6cda4391f",
+  "source_dirty": false,
   "macos": "26.6.2",
   "architecture": "arm64",
   "signing": "local-ad-hoc",
   "notarized": false,
-  "executable_sha256": "84ee8f15a66bc4a717569d0f3c0302d45086fe6057758cd4e7b2096714c77582",
-  "inventory_sha256": "e73356ac1daf456d4acbc7e71cdd4ca731fd19d1ec135f98ec3d9a95a8118120",
-  "resource_files": 1679,
+  "executable_sha256": "899fd5f7a8ebff0116f5d108a79299e1c0b89196707744f907cc533cca20341e",
+  "inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047",
+  "resource_files": 1680,
   "resource_links": 4,
-  "bytes": 918364132
+  "bytes": 914021286
 }

@@ -44,4 +44,4 @@ The checked-in result files identify the exact runtime image hashes for each exe
 
 ## Remaining release gates
 
-The owner-selected real site has not been qualified. Arbitrary recovery/passkey flows, selectors, JavaScript, screenshots, downloads and settings are unsupported. A known-value filter does not prove that arbitrary transformations of secrets are safe; the plan's R10 residual limits remain. Full application enrollment, lifecycle/recovery qualification, packaged two-VM tests and independent security review remain separate required gates.
+The owner-selected real site has not been qualified. Arbitrary recovery/passkey flows, selectors, JavaScript, screenshots, downloads and settings are unsupported. A known-value filter does not prove that arbitrary transformations of secrets are safe; the plan's R10 residual limits remain. Application enrollment, packaged two-VM tests and synthetic lifecycle/recovery checks are now recorded in [package qualification](package-status.md). Physical OS/owner rehearsal and independent security review remain required.

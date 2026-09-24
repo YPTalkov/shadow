@@ -6,8 +6,9 @@ The native restriction ledger appends source deletion, access loss, stale mirror
 
 `uv run --frozen pytest tests/catalog`: 3 passed. `sh scripts/test-swift.sh`: 7 passed. These are component tests using synthetic data.
 
-This unit is not complete: supervisor issuance and revocation are not wired to the public protocol, source provenance has not been populated from a connector, and active sessions are not yet closed by restriction events. The production runtime must never substitute the deterministic test reference factory for native random references. No real credential use is approved.
-# Projection defense follow-up
+The counts above describe the initial component checkpoint. Native issuance/revocation, connector provenance and active-session closure are now integrated and covered by the [combined VM tests](two-vm-status.md). The production runtime uses native random references. No real credential use is approved.
+
+## Projection defense follow-up
 
 Catalog and CSV preview now check allowlisted metadata against known protected values across entries/rows, including literal, URL-encoded and base64 forms. The in-memory matcher has a fixed memory/input budget and withholds all metadata if that budget is exceeded. Explicitly protected titles, usernames and URLs are withheld directly, including long values; entries under KeePassXC's recycle bin are omitted. Catalog groups now use their display path.
 

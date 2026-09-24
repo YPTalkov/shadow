@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "tested_at": "2026-09-24T06:01:47.590021+00:00",
+  "host": {
+    "macos": "26.6.2",
+    "architecture": "arm64"
+  },
+  "executable_sha256": "0b8ac0b85386d48bc0cffc23cc891173ed4a663579ed4c3b762cca2e51c5e68c",
+  "package_inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047",
+  "manifest": {
+    "image": "mcr.microsoft.com/playwright/python:v1.63.0-noble",
+    "profile": "runtime",
+    "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
+    "files": {
+      "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
+      "initrd": "6d5b859ef5c56f5a001e22474407f4d81b2f9e534bc687b1af453d5c3a7822be",
+      "disk": "da24082d49a922f5992a348a7bdb19287cc9ac97baf7422c64225ca35d8b844b"
+    }
+  },
+  "checks": {
+    "PRODUCTION_BROWSER_READY": "pass",
+    "PRODUCTION_BROWSER_LEASE_STOP": "pass",
+    "PRODUCTION_BROWSER_STOP_MS": "3374",
+    "PRODUCTION_BROWSER": "pass"
+  },
+  "exit_code": 0
+}

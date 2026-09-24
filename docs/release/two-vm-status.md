@@ -19,4 +19,6 @@ uv run --frozen python scripts/run-browser-probe.py --agent --interrupt source
 
 The browser qualification image adds the private fixture CA and diagnostic bootstrap. The production image excludes those additions. These runs do not qualify a real site, live provider, or final installed bundle. U13/U14 retain those gates.
 
+The later `packaged-two-vm-results.json` and `packaged-two-vm-source-results.json` rerun both flows using the sealed app's Python worker and agent image after the browser security updates and SDK startup repair. They record the app resource-inventory hash. The browser still uses its separate HTTPS qualification image; `production-browser-results.json` independently checks the exact bundled production image's boot and host-silence shutdown. These results do not close the live-provider, real-site or owner rehearsal gates.
+
 The CE simplification rubrics were applied serially to this harness and wrapper, as required by the owner's tool mapping. No behavior-preserving rewrite was warranted: the scripted provider is diagnostic-only, its state machine makes each expected tool result explicit, and its bounds and authority checks remain visible. Existing scenario harnesses were reused; no production capture or bypass was added.

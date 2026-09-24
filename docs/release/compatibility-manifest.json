@@ -31,8 +31,8 @@
     "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
     "files": {
       "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
-      "initrd": "c37bf61b5ccb15e7945537d251d6e04f155e8d2a7a6b40bc3b051a2901209711",
-      "disk": "c0708153801e8d8dd127668e9fa9e17ea86cc605c9ecc13ede0e2b55f4d124ec"
+      "initrd": "6d5b859ef5c56f5a001e22474407f4d81b2f9e534bc687b1af453d5c3a7822be",
+      "disk": "da24082d49a922f5992a348a7bdb19287cc9ac97baf7422c64225ca35d8b844b"
     }
   },
   "dependency_inventory": "Shadow.app/Contents/Resources/dependencies.json",

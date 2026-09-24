@@ -7,8 +7,8 @@
     "image_manifest_sha256": "832286ebbc124bd50c914b27cf2f88fb88d4e261f84f578060191c4daa9c68ac",
     "files": {
       "kernel": "d625d13a08f08ba1befa309edab7fa9360093b7e7c62b03010c0de084ff9ac20",
-      "initrd": "64a0407e1205eef36dbd40fdd351c7ba8875ee81fd7000b8ca3ce853443b3fdf",
-      "disk": "c0708153801e8d8dd127668e9fa9e17ea86cc605c9ecc13ede0e2b55f4d124ec"
+      "initrd": "e01fb497d0c05acea30d548b3127bec126122d0ec71173efaa800ed0f098ab5d",
+      "disk": "da24082d49a922f5992a348a7bdb19287cc9ac97baf7422c64225ca35d8b844b"
     }
   },
   "checks": {
@@ -20,12 +20,12 @@
     "BROWSER_HTTPS_SUBMISSIONS": "1",
     "BROWSER_CONSOLE_CANARIES": "absent"
   },
-  "tested_at": "2026-09-24T05:18:00.183104+00:00",
+  "tested_at": "2026-09-24T05:59:29.164068+00:00",
   "host": {
     "macos": "26.6.2",
     "architecture": "arm64"
   },
-  "executable_sha256": "1cd442271b89da24cde994c1de3cecc7fd5acd80bf553119d048963761f564a2",
+  "executable_sha256": "0b8ac0b85386d48bc0cffc23cc891173ed4a663579ed4c3b762cca2e51c5e68c",
   "agent_manifest": {
     "profile": "agent",
     "release": "alpine-netboot-3.22.6-aarch64.tar.gz",
@@ -36,5 +36,5 @@
       "disk": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
     }
   },
-  "package_inventory_sha256": "e73356ac1daf456d4acbc7e71cdd4ca731fd19d1ec135f98ec3d9a95a8118120"
+  "package_inventory_sha256": "4c78283b0ba2d256230ec82b9b92273c7801ae5171d2a3cb196cdfa36b2dc047"
 }

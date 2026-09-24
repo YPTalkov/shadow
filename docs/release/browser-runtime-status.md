@@ -1,12 +1,12 @@
 # Protected browser runtime qualification
 
-This is component evidence for U9. The owner application does not yet expose a working protected login. Native credential delivery, per-session command serialization, persistent operation receipts, safe observation adapters, challenges and production supervision remain in progress.
+This records the browser component tests and their current image rerun. Native credential delivery, command serialization, durable operation receipts, safe views, challenges and supervision are now integrated. See [combined VM evidence](two-vm-status.md) and [package qualification](package-status.md) for the later application checks. Real-site qualification remains open.
 
 ## Tested runtime
 
 - Apple Virtualization browser device profile: two CPUs, 4 GiB RAM, no NIC or host share, read-only SquashFS disk, tmpfs for mutable state, private Virtio display and two USB input devices.
 - Alpine Linux 6.12.110 kernel, with Ubuntu Noble userspace from the pinned official Playwright Python 1.63.0 ARM64 OCI manifest. Chromium 153.0.8010.12 runs headed as UID 1001 with its namespace sandbox enabled.
-- Xorg and NSS tooling are selected from signature-verified Ubuntu indexes and recorded in `images/display-packages.lock.json`. Package maintainer scripts never run on the host. The selected package versions need the final dependency audit before release.
+- Xorg and NSS tooling are selected from signature-verified Ubuntu indexes and recorded in `images/display-packages.lock.json`. Security overlays and removals are separately pinned. Package maintainer scripts never run on the host. The [dependency assessment](dependency-assessment.md) records the current scan and its remaining release work.
 - The image assembler verifies hashes, retains guest links as archive metadata, applies whiteouts, rejects traversal and normalizes Debian `/usr` merge paths. It never extracts guest links onto the host filesystem.
 
 The checked image hashes and result markers are in `browser-probe-results.json`. The synthetic probe boots, completes its checks and powers off in about six seconds on the development Mac. This is not a startup-time guarantee for the finished application.

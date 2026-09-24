@@ -1,8 +1,8 @@
 {
-  "time_utc": "2026-09-24T05:09:42.705099+00:00",
+  "time_utc": "2026-09-24T06:02:57.937349+00:00",
   "macos": "26.6.2",
   "architecture": "arm64",
-  "binary_sha256": "23d3bc23ba2fa1ecb7e18147e3464ccc8f66889010f08831b5e48e4d7fd1b922",
+  "binary_sha256": "0b8ac0b85386d48bc0cffc23cc891173ed4a663579ed4c3b762cca2e51c5e68c",
   "image": {
     "profile": "agent",
     "release": "alpine-netboot-3.22.6-aarch64.tar.gz",

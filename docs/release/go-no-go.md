@@ -25,6 +25,8 @@ Each receipt describes its own image and harness identity. The qualification bro
 
 The CE review found no new concrete code defect in its serial local pass. External CLI review attempts produced no usable review: Claude authentication/model dispatch failed and Grok rejected the adapter's command option. This does not count as an independent security assessment.
 
+The later [package advisory assessment](dependency-assessment.md) applied 18 public Debian updates and removed two unused vulnerable packages. Its current browser scan has zero HIGH/CRITICAL matches and 549 MEDIUM/LOW matches; remaining advisory review and unscanned native components keep the dependency gate open.
+
 ## Failure and recovery
 
 Stop the agent and lock Shadow if a fixed operation code is unexpected, a view becomes unsupported, or a resource/authority check fails. Preserve encrypted files and the build receipt. Export only the native reviewed diagnostic code/count report. Do not enable raw DOM, network, model-request or credential logging to diagnose real-account failures.
