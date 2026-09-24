@@ -29,4 +29,4 @@ uv run --frozen python scripts/run-agent-probe.py
 .build/arm64-apple-macosx/debug/owner-ui-probe
 ```
 
-The executable and image hashes, host version and per-model results are recorded in `agent-runtime-results.json`. This is synthetic provider qualification. Live ChatGPT sign-in, two-VM authenticated tasks, physical OS lifecycle events, final packaging and independent review remain release gates. Model availability for the owner's subscription has not been tested.
+The executable and image hashes, host version and per-model results are recorded in `agent-runtime-results.json`. This is synthetic provider qualification. Two-VM authenticated tasks are now covered by `two-vm-status.md`. Live ChatGPT sign-in, physical OS lifecycle events, final packaging and independent review remain release gates. Model availability for the owner's subscription has not been tested.

@@ -161,7 +161,12 @@ final class Probe: NSObject, VZVirtualMachineDelegate {
 }
 
 let probe = Probe()
-if CommandLine.arguments.dropFirst().first == "agent-runtime" {
+if CommandLine.arguments.dropFirst().first == "two-vm" {
+    Task { @MainActor in
+        do { try await TwoVMProbe.run(); print("TWO_VM_RESULT=pass"); exit(0) }
+        catch { print("TWO_VM_RESULT=failed"); exit(1) }
+    }
+} else if CommandLine.arguments.dropFirst().first == "agent-runtime" {
     Task { @MainActor in
         do { try await AgentRuntimeProbe.run(); print("AGENT_RUNTIME=pass"); exit(0) }
         catch { print("AGENT_RUNTIME=failed"); exit(1) }
