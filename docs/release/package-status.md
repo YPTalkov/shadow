@@ -13,7 +13,7 @@ All Mach-O Python libraries are locally signed before the resource inventory is 
 - The packaged agent image runs the real Codex client with all three selectable models against synthetic provider responses. Root attempts to reach the browser's ports, other host ports and direct public/private/link-local destinations fail; host shares, routes, swap and storage imports are absent, and the base disk refuses writes. Completion and native lock invalidate its caller and authority.
 - The packaged interpreter and agent image also pass the combined authenticated task and source-removal interruption. Those HTTPS tests use the separate browser qualification image containing the fixture CA. This is explicitly not a production-site test.
 
-The build receipt and individual result files carry artifact hashes. A harness executable is separate from the delivered app; the app itself has no test bypass switch. `--verify-installation` only checks its sealed resources and exits, before vault initialization.
+The build receipt and individual result files carry artifact hashes. `owner-package-results.json` records the final owner harness run after the SDK actor annotations. A harness executable is separate from the delivered app; the app itself has no test bypass switch. `--verify-installation` only checks its sealed resources and exits, before vault initialization.
 
 ## Storage performance and recovery
 
