@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import stat
 from urllib.parse import urlsplit
+from pykeepass.entry import Entry
 
 from .store import SkipMutation, VaultStore, VaultStoreError
 from .secret_guard import SecretGuard
@@ -260,7 +261,12 @@ class SelectedCSV:
             for row in rows:
                 if row.group not in groups:
                     groups[row.group] = vault.find_groups(name=row.group, group=root, first=True) or vault.add_group(root, row.group)
-                entry = vault.add_entry(groups[row.group], row.title, row.username, row.password, url=row.url, notes=row.notes, otp=row.totp or None, force_creation=True)
+                # PyKeePass 4.2.0 add_entry scans existing titles even with
+                # force_creation=True. Imports deliberately retain duplicates;
+                # use its same public Entry constructor without that O(n²) scan.
+                entry = Entry(title=row.title, username=row.username, password=row.password,
+                              url=row.url, notes=row.notes, otp=row.totp or None, kp=vault)
+                groups[row.group].append(entry)
                 entry.set_custom_property("shadow.import.operation", operation_id, protect=True)
                 entry.set_custom_property("shadow.import.digest", digest, protect=True)
 

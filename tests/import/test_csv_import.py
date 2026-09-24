@@ -10,6 +10,27 @@ MASTER = "synthetic-master-password"
 MAPPING = CSVMapping(title="Title", url="URL", username="Username", password="Password", notes="Notes", group="Group")
 
 
+def test_duplicate_titles_remain_distinct_with_protected_values(tmp_path):
+    source = tmp_path / "duplicates.csv"
+    source.write_text("Title,URL,Username,Password,Notes,TOTP\n" +
+                      "Same,https://example.invalid,same,synthetic-one,synthetic-notes,JBSWY3DPEHPK3PXP\n" +
+                      "Same,https://example.invalid,same,synthetic-two,synthetic-notes,JBSWY3DPEHPK3PXP\n")
+    store = VaultStore(tmp_path / "private", MemoryAnchor())
+    store.create(MASTER)
+    mapping = CSVMapping("Title", "URL", "Username", "Password", notes="Notes", totp="TOTP")
+    with SelectedCSV(source, mapping) as selected:
+        selected.preview()
+        assert selected.commit(store, MASTER, operation_id="duplicate-batch")["accepted"] == 2
+        assert selected.commit(store, MASTER, operation_id="duplicate-batch")["replayed"]
+    entries = store.open(MASTER).entries
+    assert len(entries) == 2 and len({entry.uuid for entry in entries}) == 2
+    assert {entry.password for entry in entries} == {"synthetic-one", "synthetic-two"}
+    for entry in entries:
+        assert entry.notes == "synthetic-notes" and entry.otp == "JBSWY3DPEHPK3PXP"
+        for key in ("Password", "otp", "shadow.import.operation", "shadow.import.digest"):
+            assert entry._element.find(f"String[Key='{key}']/Value").get("Protected") == "True"
+
+
 def test_unicode_preview_fits_a_bounded_metadata_response(tmp_path):
     source = tmp_path / "unicode.csv"
     label = "🧪" * 256
